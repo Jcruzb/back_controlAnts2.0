@@ -51,12 +51,22 @@ class Income(models.Model):
 
     def __str__(self):
         return f"{self.amount} - {self.category}"
+    
+class Category(models.Model):
+    family = models.ForeignKey(Family, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    icon = models.CharField(max_length=50)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
 
 class Expense(models.Model):
     month = models.ForeignKey(Month, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    category = models.CharField(max_length=50)
+    category = models.ForeignKey(Category, on_delete=models.PROTECT)
     date = models.DateField()
     description = models.CharField(max_length=255, blank=True)
 
