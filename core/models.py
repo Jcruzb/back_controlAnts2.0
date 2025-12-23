@@ -58,7 +58,15 @@ class Expense(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     category = models.CharField(max_length=50)
     date = models.DateField()
+    description = models.CharField(max_length=255, blank=True)
 
+    recurring_payment = models.ForeignKey(
+        'RecurringPayment',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='generated_expenses'
+    )
     is_recurring = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

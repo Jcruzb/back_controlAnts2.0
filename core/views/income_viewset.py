@@ -3,18 +3,18 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 
-from core.models import Expense, Profile, Month
-from core.serializers.expense_serializer import ExpenseSerializer
+from core.models import Income, Profile, Month
+from core.serializers.income_serializer import IncomeSerializer
 
 
-class ExpenseViewSet(ModelViewSet):
-    serializer_class = ExpenseSerializer
+class IncomeViewSet(ModelViewSet):
+    serializer_class = IncomeSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
 
-        queryset = Expense.objects.filter(
+        queryset = Income.objects.filter(
             month__family=profile.family
         )
 
@@ -38,14 +38,14 @@ class ExpenseViewSet(ModelViewSet):
     def perform_create(self, serializer):
         profile = get_object_or_404(Profile, user=self.request.user)
 
-        expense_date = serializer.validated_data.get('date')
-        if not expense_date:
+        income_date = serializer.validated_data.get('date')
+        if not income_date:
             raise ValidationError({'date': 'Date is required'})
 
         month_obj, _ = Month.objects.get_or_create(
             family=profile.family,
-            year=expense_date.year,
-            month=expense_date.month,
+            year=income_date.year,
+            month=income_date.month,
             defaults={'is_closed': False},
         )
 
@@ -64,7 +64,7 @@ class ExpenseViewSet(ModelViewSet):
     def perform_update(self, serializer):
         instance = self.get_object()
 
-        # If the existing month is closed, do not allow any modification
+        # Block modifications if the current month is closed
         if instance.month.is_closed:
             raise ValidationError('This month is closed and cannot be modified')
 
@@ -73,7 +73,7 @@ class ExpenseViewSet(ModelViewSet):
         if amount is not None and amount <= 0:
             raise ValidationError({'amount': 'Amount must be greater than 0'})
 
-        # If date is being changed, ensure month is aligned with the new date
+        # If date is being updated, realign month with the new date
         new_date = serializer.validated_data.get('date')
         if new_date is not None:
             profile = get_object_or_404(Profile, user=self.request.user)
