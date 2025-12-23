@@ -1,0 +1,42 @@
+# =========================
+# Python / Django
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.env/
+.env.*
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+media/
+staticfiles/
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# =========================
+# Test / Coverage
+# =========================
+.coverage
+htmlcov/
+pytest_cache/
+
+# =========================
+# Migrations (opcional)
+# =========================
+# Si algún día quieres ignorar migraciones:
+# **/migrations/*.py
+# !**/migrations/__init__.py
