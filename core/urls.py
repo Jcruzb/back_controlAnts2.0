@@ -5,11 +5,13 @@ from core.views.expense_viewset import ExpenseViewSet
 from core.views.income_viewset import IncomeViewSet
 from core.views.recurring_generation_api import GenerateRecurringExpensesAPIView
 from core.views.category_viewset import CategoryViewSet
+from core.views.RecurringPayment_viewset import RecurringPaymentViewSet
 from core.views.csrf_view import csrf
 
 router = DefaultRouter()
 router.register(r'expenses', ExpenseViewSet, basename='expense')
 router.register(r'categories', CategoryViewSet, basename='category')
+router.register(r'recurring-payments', RecurringPaymentViewSet, basename='recurringpayment')
 
 urlpatterns = [
     path(

@@ -4,6 +4,7 @@ from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 
 from core.models import Expense, Profile, Month
+from core.models import RecurringPayment
 from core.serializers.expense_serializer import ExpenseSerializer
 
 
@@ -56,10 +57,34 @@ class ExpenseViewSet(ModelViewSet):
         if amount <= 0:
             raise ValidationError({'amount': 'Amount must be greater than 0'})
 
-        serializer.save(
-            user=self.request.user,
-            month=month_obj,
-        )
+        is_recurring = serializer.validated_data.get('is_recurring', False)
+        recurring_payment = None
+        if is_recurring:
+            recurring = self.request.data.get('recurring')
+            if not recurring:
+                raise ValidationError({'recurring': 'Recurring configuration is required'})
+
+            recurring_payment = RecurringPayment.objects.create(
+                family=profile.family,
+                name=recurring.get('name') or serializer.validated_data.get('description'),
+                amount=serializer.validated_data.get('amount'),
+                due_day=recurring['due_day'],
+                start_date=recurring['start_date'],
+                end_date=recurring.get('end_date'),
+                active=True,
+            )
+
+        if is_recurring:
+            serializer.save(
+                user=self.request.user,
+                month=month_obj,
+                recurring_payment=recurring_payment,
+            )
+        else:
+            serializer.save(
+                user=self.request.user,
+                month=month_obj,
+            )
 
     def perform_update(self, serializer):
         instance = self.get_object()

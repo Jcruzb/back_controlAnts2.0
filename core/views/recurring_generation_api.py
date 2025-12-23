@@ -1,5 +1,7 @@
 import calendar
 from datetime import date
+from django.utils import timezone
+from django.db import models
 
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -16,7 +18,7 @@ class GenerateRecurringExpensesAPIView(APIView):
     def post(self, request):
         profile = get_object_or_404(Profile, user=request.user)
 
-        today = date.today()
+        today = timezone.now().date()
         year = today.year
         month_num = today.month
 
@@ -36,6 +38,9 @@ class GenerateRecurringExpensesAPIView(APIView):
         recurring_payments = RecurringPayment.objects.filter(
             family=profile.family,
             active=True,
+            start_date__lte=today,
+        ).filter(
+            models.Q(end_date__isnull=True) | models.Q(end_date__gte=today)
         )
 
         for rp in recurring_payments:
@@ -49,7 +54,7 @@ class GenerateRecurringExpensesAPIView(APIView):
                 continue
 
             last_day = calendar.monthrange(year, month_num)[1]
-            day = min(rp.day_of_month, last_day)
+            day = min(rp.due_day, last_day)
             expense_date = date(year, month_num, day)
             Expense.objects.create(
                 user=request.user,
@@ -59,6 +64,7 @@ class GenerateRecurringExpensesAPIView(APIView):
                 category=rp.category,
                 date=expense_date,
                 is_recurring=True,
+                description=rp.name,
             )
             created += 1
 

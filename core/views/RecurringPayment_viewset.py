@@ -2,6 +2,7 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 
 from core.models import RecurringPayment, Profile, Month
 from core.serializers.recurringPayment_serializer import RecurringPaymentSerializer
@@ -27,6 +28,12 @@ class RecurringPaymentViewSet(ModelViewSet):
         if amount <= 0:
             raise ValidationError({'amount': 'Amount must be greater than 0'})
 
+        start_date = serializer.validated_data.get('start_date')
+        end_date = serializer.validated_data.get('end_date')
+
+        if end_date is not None and end_date < start_date:
+            raise ValidationError({'end_date': 'End date cannot be earlier than start date'})
+
         serializer.save(
             user=self.request.user,
             family=profile.family,
@@ -37,7 +44,15 @@ class RecurringPaymentViewSet(ModelViewSet):
         if amount is not None and amount <= 0:
             raise ValidationError({'amount': 'Amount must be greater than 0'})
 
+        end_date = serializer.validated_data.get('end_date')
+        if end_date is not None:
+            instance = self.get_object()
+            start_date = serializer.validated_data.get('start_date', instance.start_date)
+            if end_date < start_date:
+                raise ValidationError({'end_date': 'End date cannot be earlier than start date'})
+
         serializer.save()
 
     def perform_destroy(self, instance):
-        instance.delete()
+        instance.active = False
+        instance.save()

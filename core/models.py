@@ -89,6 +89,9 @@ class RecurringPayment(models.Model):
     name = models.CharField(max_length=100)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     due_day = models.IntegerField()  # 1 - 31
+    
+    start_date = models.DateField()   # cuándo empieza
+    end_date = models.DateField(null=True, blank=True) 
     active = models.BooleanField(default=True)
 
     def __str__(self):
