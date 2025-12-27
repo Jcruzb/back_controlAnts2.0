@@ -57,34 +57,10 @@ class ExpenseViewSet(ModelViewSet):
         if amount <= 0:
             raise ValidationError({'amount': 'Amount must be greater than 0'})
 
-        is_recurring = serializer.validated_data.get('is_recurring', False)
-        recurring_payment = None
-        if is_recurring:
-            recurring = self.request.data.get('recurring')
-            if not recurring:
-                raise ValidationError({'recurring': 'Recurring configuration is required'})
-
-            recurring_payment = RecurringPayment.objects.create(
-                family=profile.family,
-                name=recurring.get('name') or serializer.validated_data.get('description'),
-                amount=serializer.validated_data.get('amount'),
-                due_day=recurring['due_day'],
-                start_date=recurring['start_date'],
-                end_date=recurring.get('end_date'),
-                active=True,
-            )
-
-        if is_recurring:
-            serializer.save(
-                user=self.request.user,
-                month=month_obj,
-                recurring_payment=recurring_payment,
-            )
-        else:
-            serializer.save(
-                user=self.request.user,
-                month=month_obj,
-            )
+        serializer.save(
+            user=self.request.user,
+            month=month_obj,
+        )
 
     def perform_update(self, serializer):
         instance = self.get_object()
@@ -124,3 +100,4 @@ class ExpenseViewSet(ModelViewSet):
             raise ValidationError('This month is closed and cannot be modified')
 
         instance.delete()
+        

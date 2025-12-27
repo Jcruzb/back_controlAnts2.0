@@ -11,11 +11,15 @@ class ExpenseSerializer(serializers.ModelSerializer):
             "amount",
             "category",
             "date",
+            "month",
+            "planned_expense",
+            "recurring_payment",
             "is_recurring",
         ]
+        read_only_fields = ("month",)
 
     def validate_category(self, value):
-        # Permitir vacío o null
+        # Permitir vacío o null (legacy / compatibilidad)
         if value in [None, ""]:
-            return ""
+            return None
         return value

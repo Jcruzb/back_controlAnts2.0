@@ -63,11 +63,35 @@ class Category(models.Model):
     def __str__(self):
         return self.name
 
+class PlannedExpense(models.Model):
+    month = models.ForeignKey(Month, on_delete=models.CASCADE, related_name="planned_expenses")
+    family = models.ForeignKey(Family, on_delete=models.CASCADE)
+    category = models.ForeignKey(Category, on_delete=models.PROTECT)
+    name = models.CharField(max_length=100, blank=True)  # opcional
+    planned_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("month", "category")
+
+    def __str__(self):
+        return f"{self.month} - {self.category.name} ({self.planned_amount})"
+
 class Expense(models.Model):
     month = models.ForeignKey(Month, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     category = models.ForeignKey(Category, on_delete=models.PROTECT)
+
+    planned_expense = models.ForeignKey(
+        'PlannedExpense',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='expenses'
+    )
+
     date = models.DateField()
     description = models.CharField(max_length=255, blank=True)
 
@@ -86,6 +110,11 @@ class Expense(models.Model):
     
 class RecurringPayment(models.Model):
     family = models.ForeignKey(Family, on_delete=models.CASCADE)
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.PROTECT,
+        related_name="recurring_payments"
+    )
     name = models.CharField(max_length=100)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     due_day = models.IntegerField()  # 1 - 31
