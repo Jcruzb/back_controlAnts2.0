@@ -1,5 +1,7 @@
 from datetime import date
-from django.db.models import Sum
+from calendar import monthrange
+from django.db.models import Sum, Q
+
 
 from core.models import (
     Month,
@@ -38,23 +40,19 @@ class BudgetService:
 
     def get_active_recurring_payments(self):
         month_start = date(self.year, self.month, 1)
-
-        return (
-            RecurringPayment.objects.filter(
-                family=self.family,
-                active=True,
-                start_date__lte=month_start,
-                end_date__isnull=True,
-            )
-            |
-            RecurringPayment.objects.filter(
-                family=self.family,
-                active=True,
-                start_date__lte=month_start,
-                end_date__gte=month_start,
-            )
+        month_end = date(
+            self.year,
+            self.month,
+            monthrange(self.year, self.month)[1]
         )
 
+        return RecurringPayment.objects.filter(
+            family=self.family,
+            active=True,
+            start_date__lte=month_end,
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=month_start)
+        )
     def get_recurring_summary(self):
         recurrences = self.get_active_recurring_payments()
         result = []
