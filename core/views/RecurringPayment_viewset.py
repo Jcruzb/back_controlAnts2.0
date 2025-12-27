@@ -1,6 +1,9 @@
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework import status
 from django.shortcuts import get_object_or_404
 
 from core.models import RecurringPayment, Profile
@@ -66,3 +69,19 @@ class RecurringPaymentViewSet(ModelViewSet):
         # Soft delete: un gasto fijo desactivado no afecta meses futuros
         instance.active = False
         instance.save()
+        
+    @action(detail=True, methods=["post"])
+    def reactivate(self, request, pk=None):
+        recurring = self.get_object()
+
+        if recurring.active:
+            return Response(
+                {"detail": "Recurring payment is already active"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        recurring.active = True
+        recurring.save()
+
+        serializer = self.get_serializer(recurring)
+        return Response(serializer.data, status=status.HTTP_200_OK)
