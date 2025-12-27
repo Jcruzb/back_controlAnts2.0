@@ -72,6 +72,7 @@ class BudgetService:
             result.append({
                 "id": rec.id,
                 "name": rec.name,
+                "category": rec.category.id, 
                 "planned_amount": rec.amount,
                 "spent_amount": spent,
                 "remaining_amount": remaining,
