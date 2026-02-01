@@ -136,3 +136,72 @@ def create_profile_for_user(sender, instance, created, **kwargs):
                 family=family,
                 role='member'
             )
+
+
+# Planned expense redesign models
+class PlannedExpensePlan(models.Model):
+    family = models.ForeignKey(Family, on_delete=models.CASCADE)
+    category = models.ForeignKey(Category, on_delete=models.PROTECT)
+
+    name = models.CharField(max_length=100, blank=True)
+
+    PLAN_TYPE_CHOICES = [
+        ("ONE_MONTH", "Sólo un mes"),
+        ("ONGOING", "Mantener en el tiempo"),
+    ]
+    plan_type = models.CharField(
+        max_length=10,
+        choices=PLAN_TYPE_CHOICES
+    )
+
+    active = models.BooleanField(default=True)
+
+    start_month = models.ForeignKey(
+        Month,
+        on_delete=models.PROTECT,
+        related_name="planned_plans_starting"
+    )
+    end_month = models.ForeignKey(
+        Month,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="planned_plans_ending"
+    )
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.category.name} ({self.plan_type})"
+
+
+class PlannedExpenseVersion(models.Model):
+    plan = models.ForeignKey(
+        PlannedExpensePlan,
+        related_name="versions",
+        on_delete=models.CASCADE
+    )
+
+    planned_amount = models.DecimalField(max_digits=10, decimal_places=2)
+
+    valid_from = models.ForeignKey(
+        Month,
+        on_delete=models.PROTECT,
+        related_name="planned_versions_from"
+    )
+    valid_to = models.ForeignKey(
+        Month,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="planned_versions_to"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["valid_from"]
+
+    def __str__(self):
+        return f"{self.plan} - {self.planned_amount}"

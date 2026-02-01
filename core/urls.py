@@ -7,6 +7,7 @@ from core.views.recurring_generation_api import GenerateRecurringExpensesAPIView
 from core.views.category_viewset import CategoryViewSet
 from core.views.RecurringPayment_viewset import RecurringPaymentViewSet
 from core.views.plannedExpense_viewset import PlannedExpenseViewSet
+from core.views.planned_expense_plan_viewset import PlannedExpensePlanViewSet
 from core.views.csrf_view import csrf
 from core.views.budget_view import BudgetView
 
@@ -15,6 +16,12 @@ router.register(r'expenses', ExpenseViewSet, basename='expense')
 router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'recurring-payments', RecurringPaymentViewSet, basename='recurringpayment')
 router.register(r'planned-expenses', PlannedExpenseViewSet, basename='plannedexpense')
+
+router.register(
+    r'planned-expense-plans',
+    PlannedExpensePlanViewSet,
+    basename='plannedexpenseplan'
+)
 
 urlpatterns = [
     path(
