@@ -11,6 +11,9 @@ from core.views.planned_expense_plan_viewset import PlannedExpensePlanViewSet
 from core.views.csrf_view import csrf
 from core.views.budget_view import BudgetView
 
+from core.views.planned_income_plan_viewset import IncomePlanViewSet
+from core.views.plannedIncome_viewset import IncomePlanVersionViewSet
+
 router = DefaultRouter()
 router.register(r'expenses', ExpenseViewSet, basename='expense')
 router.register(r'categories', CategoryViewSet, basename='category')
@@ -21,6 +24,18 @@ router.register(
     r'planned-expense-plans',
     PlannedExpensePlanViewSet,
     basename='plannedexpenseplan'
+)
+
+router.register(
+    r'income-plans',
+    IncomePlanViewSet,
+    basename='incomeplan'
+)
+
+router.register(
+    r'income-plan-versions',
+    IncomePlanVersionViewSet,
+    basename='incomeplanversion'
 )
 
 urlpatterns = [

@@ -44,13 +44,109 @@ class Income(models.Model):
     month = models.ForeignKey(Month, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    category = models.CharField(max_length=50)
+    category = models.ForeignKey('Category', on_delete=models.PROTECT)
+
+    # Optional link to a plan (for salaries / recurring planned incomes)
+    income_plan = models.ForeignKey(
+        'IncomePlan',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='generated_incomes'
+    )
+
     date = models.DateField()
+    description = models.CharField(max_length=255, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['month', 'income_plan'],
+                condition=models.Q(income_plan__isnull=False),
+                name='uniq_income_per_month_per_income_plan',
+            )
+        ]
+        indexes = [
+            models.Index(fields=['month', 'income_plan'], name='idx_income_month_plan'),
+        ]
+
     def __str__(self):
         return f"{self.amount} - {self.category}"
+    
+
+class IncomePlan(models.Model):
+    family = models.ForeignKey(Family, on_delete=models.CASCADE)
+    category = models.ForeignKey('Category', on_delete=models.PROTECT)
+
+    name = models.CharField(max_length=100, blank=True)
+
+    PLAN_TYPE_CHOICES = [
+        ("ONE_MONTH", "Sólo un mes"),
+        ("ONGOING", "Mantener en el tiempo"),
+    ]
+    plan_type = models.CharField(
+        max_length=10,
+        choices=PLAN_TYPE_CHOICES
+    )
+
+    # Optional: helps UX suggest a default date inside the month
+    due_day = models.IntegerField(null=True, blank=True)  # 1 - 31
+
+    active = models.BooleanField(default=True)
+
+    start_month = models.ForeignKey(
+        Month,
+        on_delete=models.PROTECT,
+        related_name="income_plans_starting"
+    )
+    end_month = models.ForeignKey(
+        Month,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="income_plans_ending"
+    )
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        label = self.name or self.category.name
+        return f"{label} ({self.plan_type})"
+
+
+class IncomePlanVersion(models.Model):
+    plan = models.ForeignKey(
+        IncomePlan,
+        related_name="versions",
+        on_delete=models.CASCADE
+    )
+
+    planned_amount = models.DecimalField(max_digits=10, decimal_places=2)
+
+    valid_from = models.ForeignKey(
+        Month,
+        on_delete=models.PROTECT,
+        related_name="income_versions_from"
+    )
+    valid_to = models.ForeignKey(
+        Month,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="income_versions_to"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["valid_from"]
+
+    def __str__(self):
+        label = self.plan.name or self.plan.category.name
+        return f"{label} - {self.planned_amount}"
     
 class Category(models.Model):
     family = models.ForeignKey(Family, on_delete=models.CASCADE)
