@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import calendar
 import datetime
+from typing import Optional
 
 from django.db import IntegrityError
 from django.db.models import Q
@@ -75,7 +76,9 @@ def _to_decimal_amount(value) -> Decimal:
 
 
 # Helper to check for closed months in a range
-def _has_closed_months_in_range(family, start: Month, end: Month | None) -> bool:
+from typing import Optional
+# ...
+def _has_closed_months_in_range(family, start: Month, end: Optional[Month]) -> bool:
     """True if there is any closed Month within [start, end]. If end is None, checks from start onwards."""
     qs = Month.objects.filter(family=family, is_closed=True)
 

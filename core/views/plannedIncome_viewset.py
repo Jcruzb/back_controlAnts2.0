@@ -3,6 +3,7 @@ from django.db.models import Q
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ModelViewSet
+from typing import Optional
 
 from core.models import IncomePlanVersion, Month, Profile
 from core.serializers.planned_income_serializer import IncomePlanVersionSerializer
@@ -22,7 +23,7 @@ def _range_overlaps(a_start, a_end, b_start, b_end):
     return not (a1 < b0 or b1 < a0)
 
 
-def _has_closed_months(family, start: Month, end: Month | None) -> bool:
+def _has_closed_months(family, start: Month, end: Optional[Month]) -> bool:
     """Return True if there is any closed Month within [start, end] (end can be None => infinity)."""
     qs = Month.objects.filter(family=family, is_closed=True)
 
