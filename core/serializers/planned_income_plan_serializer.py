@@ -8,7 +8,14 @@ from core.serializers.category_serializer import CategorySerializer
 class IncomePlanSerializer(serializers.ModelSerializer):
     # Read-only category detail for frontend convenience
     category_detail = CategorySerializer(source="category", read_only=True)
+    family = serializers.PrimaryKeyRelatedField(read_only=True)
     category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.none())
+    planned_amount = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        write_only=True,
+        required=False,
+    )
     start_month = serializers.PrimaryKeyRelatedField(queryset=Month.objects.none())
     end_month = serializers.PrimaryKeyRelatedField(
         queryset=Month.objects.none(),
@@ -29,4 +36,4 @@ class IncomePlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = IncomePlan
         fields = "__all__"
-        read_only_fields = ("created_by", "created_at")
+        read_only_fields = ("family", "created_by", "created_at")

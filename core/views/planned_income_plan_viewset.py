@@ -134,20 +134,40 @@ class IncomePlanViewSet(ModelViewSet):
         # Ensure required relations are consistent with family
         self._validate_family_consistency(profile, serializer)
 
-        serializer.save(
+        planned_amount = serializer.validated_data.pop('planned_amount', None)
+
+        plan = serializer.save(
             family=profile.family,
             created_by=self.request.user,
         )
 
+        if planned_amount is not None:
+            try:
+                planned_amount = Decimal(str(planned_amount))
+            except (InvalidOperation, TypeError, ValueError):
+                raise ValidationError({'planned_amount': 'planned_amount must be a number'})
+
+            if planned_amount <= 0:
+                raise ValidationError({'planned_amount': 'planned_amount must be greater than 0'})
+
+            IncomePlanVersion.objects.create(
+                plan=plan,
+                planned_amount=planned_amount,
+                valid_from=plan.start_month,
+                valid_to=plan.start_month if plan.plan_type == 'ONE_MONTH' else None,
+            )
+
     def perform_update(self, serializer):
         profile = get_object_or_404(Profile, user=self.request.user)
         instance = self.get_object()
+        request = self.request
 
         self._validate_family_consistency(profile, serializer)
 
         # Determine the resulting range after update
         start_month = serializer.validated_data.get('start_month', instance.start_month)
         end_month = serializer.validated_data.get('end_month', instance.end_month)
+        planned_amount = request.data.get('planned_amount')
 
         # For ONE_MONTH, align end_month to start_month (same logic as validation)
         plan_type = serializer.validated_data.get('plan_type', instance.plan_type)
@@ -159,9 +179,32 @@ class IncomePlanViewSet(ModelViewSet):
             raise ValidationError({'detail': 'This month is closed and cannot be modified'})
 
         # Prevent changing ownership fields from client
-        serializer.save(
+        plan = serializer.save(
             family=profile.family,
         )
+
+        if planned_amount is not None:
+            try:
+                planned_amount = Decimal(str(planned_amount))
+            except (InvalidOperation, TypeError, ValueError):
+                raise ValidationError({'planned_amount': 'planned_amount must be a number'})
+
+            if planned_amount <= 0:
+                raise ValidationError({'planned_amount': 'planned_amount must be greater than 0'})
+
+            last_version = (
+                IncomePlanVersion.objects
+                .filter(plan=plan)
+                .order_by('-valid_from')
+                .first()
+            )
+
+            if last_version is None or last_version.planned_amount != planned_amount:
+                IncomePlanVersion.objects.create(
+                    plan=plan,
+                    planned_amount=planned_amount,
+                    valid_from=plan.start_month,
+                )
 
 
     def _parse_year_month(self, request):
@@ -183,6 +226,20 @@ class IncomePlanViewSet(ModelViewSet):
             raise ValidationError({'detail': 'Plan does not apply to this month'})
         if plan.end_month is not None and (plan.end_month.year, plan.end_month.month) < (year, month):
             raise ValidationError({'detail': 'Plan does not apply to this month'})
+
+    @action(detail=True, methods=['post'], url_path='deactivate')
+    def deactivate(self, request, pk=None):
+        plan = self.get_object()
+        plan.active = False
+        plan.save(update_fields=['active'])
+        return Response({'status': 'deactivated'})
+
+    @action(detail=True, methods=['post'], url_path='reactivate')
+    def reactivate(self, request, pk=None):
+        plan = self.get_object()
+        plan.active = True
+        plan.save(update_fields=['active'])
+        return Response({'status': 'reactivated'})
 
     @action(detail=False, methods=['get'], url_path='month')
     def month(self, request):
@@ -239,6 +296,8 @@ class IncomePlanViewSet(ModelViewSet):
                 'name': plan.name,
                 'plan_type': plan.plan_type,
                 'due_day': plan.due_day,
+                'start_month': plan.start_month_id,
+                'end_month': plan.end_month_id,
                 'category': plan.category_id,
                 'category_detail': CategorySerializer(plan.category).data,
                 'version_id': version.id if version else None,
@@ -254,7 +313,12 @@ class IncomePlanViewSet(ModelViewSet):
             })
 
         return Response({
-            'month': {'year': year_int, 'month': month_int, 'is_closed': month_obj.is_closed},
+            'month': {
+                'id': month_obj.id,
+                'year': year_int,
+                'month': month_int,
+                'is_closed': month_obj.is_closed,
+            },
             'results': results,
         })
 

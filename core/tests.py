@@ -4,7 +4,16 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from core.models import Category, Expense, Family, Month
+from core.models import (
+    Category,
+    Expense,
+    Family,
+    Month,
+    PlannedExpense,
+    PlannedExpensePlan,
+    PlannedExpenseVersion,
+    RecurringPayment,
+)
 
 
 class MultiTenantSecurityTests(TestCase):
@@ -115,3 +124,82 @@ class MultiTenantSecurityTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(str(response.data["unplanned_total"]), "20")
+
+    def test_budget_includes_consistent_category_fields_in_recurring_and_planned(self):
+        recurring = RecurringPayment.objects.create(
+            family=self.family_a,
+            category=self.category_a,
+            name="Internet",
+            amount="50.00",
+            due_day=10,
+            start_date=date(2026, 1, 1),
+            active=True,
+        )
+        Expense.objects.create(
+            month=self.month_a,
+            user=self.user_a,
+            amount="25.00",
+            category=self.category_a,
+            recurring_payment=recurring,
+            date=date(2026, 4, 10),
+            description="Internet abril",
+        )
+
+        planned_expense = PlannedExpense.objects.create(
+            month=self.month_a,
+            family=self.family_a,
+            category=self.category_a,
+            name="Compra mensual",
+            planned_amount="100.00",
+            created_by=self.user_a,
+        )
+        Expense.objects.create(
+            month=self.month_a,
+            user=self.user_a,
+            amount="40.00",
+            category=self.category_a,
+            planned_expense=planned_expense,
+            date=date(2026, 4, 12),
+            description="Supermercado",
+        )
+
+        transport_category = Category.objects.create(
+            family=self.family_a,
+            name="Transporte",
+            icon="bus",
+        )
+        planned_plan = PlannedExpensePlan.objects.create(
+            family=self.family_a,
+            category=transport_category,
+            name="Abono transporte",
+            plan_type="ONGOING",
+            active=True,
+            start_month=self.month_a,
+            created_by=self.user_a,
+        )
+        PlannedExpenseVersion.objects.create(
+            plan=planned_plan,
+            planned_amount="30.00",
+            valid_from=self.month_a,
+        )
+
+        self.client.force_authenticate(user=self.user_a)
+        response = self.client.get("/api/budget/?year=2026&month=4")
+
+        self.assertEqual(response.status_code, 200)
+
+        recurring_item = response.data["recurring"][0]
+        self.assertEqual(recurring_item["category"], self.category_a.id)
+        self.assertEqual(recurring_item["category_name"], self.category_a.name)
+        self.assertEqual(recurring_item["category_detail"]["id"], self.category_a.id)
+        self.assertEqual(recurring_item["category_detail"]["name"], self.category_a.name)
+
+        planned_items = response.data["planned"]
+        self.assertEqual(len(planned_items), 2)
+
+        for item in planned_items:
+            self.assertIn("category", item)
+            self.assertIn("category_name", item)
+            self.assertIn("category_detail", item)
+            self.assertEqual(item["category"], item["category_detail"]["id"])
+            self.assertEqual(item["category_name"], item["category_detail"]["name"])

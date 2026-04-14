@@ -1,0 +1,21 @@
+{
+  "categories": [
+    { "name": "Alimentación", "icon": "🌽", "color": "#22c55e" },
+    { "name": "Blanca", "icon": "🙈", "color": "#f472b6" },
+    { "name": "casa", "icon": "🏠", "color": "#f59e0b" },
+    { "name": "coche", "icon": "🚗", "color": "#ef4444" },
+    { "name": "Joy", "icon": "👶", "color": "#f9a8d4" },
+    { "name": "Juan", "icon": "🙋", "color": "#3b82f6" },
+    { "name": "Padres", "icon": "👪", "color": "#8b5cf6" },
+    { "name": "Préstamo", "icon": "🔒", "color": "#64748b" },
+    { "name": "Salidas", "icon": "🍿", "color": "#f97316" },
+    { "name": "Seguros", "icon": "🛡️", "color": "#0f766e" },
+    { "name": "Servicios", "icon": "💡", "color": "#eab308" },
+    { "name": "Sueldos", "icon": "💼", "color": "#1d4ed8" },
+    { "name": "Suscripciones", "icon": "🧾", "color": "#7c3aed" },
+    { "name": "Tarjeta de crédito", "icon": "💳", "color": "#0891b2" },
+    { "name": "Telefonía", "icon": "📱", "color": "#2563eb" },
+    { "name": "Transporte", "icon": "🛴", "color": "#16a34a" },
+    { "name": "Inversión", "icon": "💹", "color": "#059669" }
+  ]
+}

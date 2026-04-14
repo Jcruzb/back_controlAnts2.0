@@ -11,6 +11,7 @@ from core.models import (
     PlannedExpenseVersion,
     RecurringPayment,
 )
+from core.serializers.category_serializer import CategorySerializer
 from core.services.budget_rules import WARNING_THRESHOLD, OVER_THRESHOLD
 
 
@@ -43,6 +44,13 @@ class BudgetService:
             return "warning", ratio, planned - spent
 
         return "ok", ratio, planned - spent
+
+    def _serialize_category(self, category):
+        return {
+            "category": category.id,
+            "category_name": category.name,
+            "category_detail": CategorySerializer(category).data,
+        }
 
     def get_active_recurring_payments(self):
         month_start = date(self.year, self.month, 1)
@@ -85,7 +93,7 @@ class BudgetService:
             result.append({
                 "id": rec.id,
                 "name": rec.name,
-                "category": rec.category.id, 
+                **self._serialize_category(rec.category),
                 "planned_amount": rec.amount,
                 "spent_amount": spent,
                 "remaining_amount": remaining,
@@ -154,7 +162,7 @@ class BudgetService:
 
             result.append({
                 "id": f"plan-{plan.id}",
-                "category": plan.category.name,
+                **self._serialize_category(plan.category),
                 "planned_amount": version.planned_amount,
                 "spent_amount": spent,
                 "remaining_amount": remaining,
@@ -180,7 +188,7 @@ class BudgetService:
 
             result.append({
                 "id": p.id,
-                "category": p.category.name,
+                **self._serialize_category(p.category),
                 "planned_amount": p.planned_amount,
                 "spent_amount": spent,
                 "remaining_amount": remaining,
@@ -203,6 +211,7 @@ class BudgetService:
         )
 
     def build_budget(self):
+        month = self.get_month()
         recurring = self.get_recurring_summary()
         planned_legacy = self.get_planned_expenses_summary()
         planned_plans = self.get_planned_plans_summary()
@@ -220,6 +229,7 @@ class BudgetService:
         status, ratio, remaining = self._calculate_status(total_planned, total_spent)
 
         return {
+            "month_id": month.id,
             "year": self.year,
             "month": self.month,
             "status": status,

@@ -84,6 +84,8 @@ def build_income_plan_month_status(family, year: int, month: int):
             'name': plan.name,
             'plan_type': plan.plan_type,
             'due_day': plan.due_day,
+            'start_month': plan.start_month_id,
+            'end_month': plan.end_month_id,
             'category': plan.category_id,
             'category_detail': CategorySerializer(plan.category).data,
             'version_id': version.id if version else None,
@@ -99,7 +101,12 @@ def build_income_plan_month_status(family, year: int, month: int):
         })
 
     return {
-        'month': {'year': year, 'month': month, 'is_closed': month_obj.is_closed},
+        'month': {
+            'id': month_obj.id,
+            'year': year,
+            'month': month,
+            'is_closed': month_obj.is_closed,
+        },
         'results': results,
     }
 
