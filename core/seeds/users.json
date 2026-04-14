@@ -1,0 +1,30 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "jcruz",
+      "password": "12345678",
+      "email": "j.cruzb@outlook.com",
+      "first_name": "Juan",
+      "last_name": "Cruz",
+      "is_active": true,
+      "is_staff": true,
+      "is_superuser": true,
+      "role": "admin",
+      "family": "CruzPa"
+    },
+    {
+      "id": 2,
+      "username": "bpariona",
+      "password": "12345678",
+      "email": "bpariona.isidro@gmail.com",
+      "first_name": "Blanca",
+      "last_name": "Pariona",
+      "is_active": true,
+      "is_staff": true,
+      "is_superuser": true,
+      "role": "admin",
+      "family": "CruzPa"
+    }
+  ]
+}

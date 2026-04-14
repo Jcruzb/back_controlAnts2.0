@@ -10,6 +10,7 @@ from core.views.plannedExpense_viewset import PlannedExpenseViewSet
 from core.views.planned_expense_plan_viewset import PlannedExpensePlanViewSet
 from core.views.csrf_view import csrf
 from core.views.budget_view import BudgetView
+from core.views.auth_view import LoginView, LogoutView, MeView, RegisterView
 
 from core.views.planned_income_plan_viewset import IncomePlanViewSet
 from core.views.plannedIncome_viewset import IncomePlanVersionViewSet
@@ -49,8 +50,24 @@ urlpatterns = [
         IncomeViewSet.as_view({'get': 'list', 'post': 'create'}),
         name='income-list-create',
     ),
+    path(
+        'incomes/<int:pk>/',
+        IncomeViewSet.as_view(
+            {
+                'get': 'retrieve',
+                'put': 'update',
+                'patch': 'partial_update',
+                'delete': 'destroy',
+            }
+        ),
+        name='income-detail',
+    ),
     
     path('csrf/', csrf, name='csrf'),
+    path('auth/register/', RegisterView.as_view(), name='auth-register'),
+    path('auth/login/', LoginView.as_view(), name='auth-login'),
+    path('auth/logout/', LogoutView.as_view(), name='auth-logout'),
+    path('auth/me/', MeView.as_view(), name='auth-me'),
     path("budget/", BudgetView.as_view(), name="budget"),
 ]
 

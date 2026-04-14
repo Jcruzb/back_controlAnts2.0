@@ -225,13 +225,12 @@ class RecurringPayment(models.Model):
 @receiver(post_save, sender=User)
 def create_profile_for_user(sender, instance, created, **kwargs):
     if created:
-        family = Family.objects.first()
-        if family:
-            Profile.objects.create(
-                user=instance,
-                family=family,
-                role='member'
-            )
+        family = Family.objects.create(name=f"Familia de {instance.username}")
+        Profile.objects.create(
+            user=instance,
+            family=family,
+            role='member'
+        )
 
 
 # Planned expense redesign models

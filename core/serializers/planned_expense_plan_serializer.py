@@ -1,8 +1,11 @@
 from rest_framework import serializers
+from django.shortcuts import get_object_or_404
 from core.models import (
+    Category,
     PlannedExpensePlan,
     PlannedExpenseVersion,
     Month,
+    Profile,
 )
 from django.utils import timezone
 
@@ -23,6 +26,7 @@ class PlannedExpenseVersionSerializer(serializers.ModelSerializer):
 class PlannedExpensePlanSerializer(serializers.ModelSerializer):
     versions = PlannedExpenseVersionSerializer(many=True, read_only=True)
     category_name = serializers.CharField(source="category.name", read_only=True)
+    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.none())
 
     # Input-only fields for creation
     planned_amount = serializers.DecimalField(
@@ -40,9 +44,14 @@ class PlannedExpensePlanSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get("request")
-        if request and request.user and hasattr(request.user, "family"):
+        if request and request.user and request.user.is_authenticated:
+            profile = get_object_or_404(Profile, user=request.user)
+            self.fields["category"].queryset = profile.family.category_set.all()
             self.fields["start_month"].queryset = Month.objects.filter(
-                family=request.user.family
+                family=profile.family
+            )
+            self.fields["end_month"].queryset = Month.objects.filter(
+                family=profile.family
             )
 
     class Meta:
@@ -82,13 +91,21 @@ class PlannedExpensePlanSerializer(serializers.ModelSerializer):
 
         request = self.context.get("request")
         user = request.user if request else None
+        profile = get_object_or_404(Profile, user=user) if user and user.is_authenticated else None
 
         # Security / multi-tenant: months must belong to the user's family
-        if user and hasattr(user, "family"):
-            if start_month and start_month.family_id != user.family_id:
+        if profile is not None:
+            category = attrs.get("category")
+            if category and category.family_id != profile.family_id:
+                raise serializers.ValidationError("category is not valid for this family")
+            if start_month and start_month.family_id != profile.family_id:
                 raise serializers.ValidationError("start_month is not valid for this family")
-            if end_month and end_month.family_id != user.family_id:
+            if end_month and end_month.family_id != profile.family_id:
                 raise serializers.ValidationError("end_month is not valid for this family")
+
+        planned_amount = attrs.get("planned_amount")
+        if planned_amount is not None and planned_amount <= 0:
+            raise serializers.ValidationError("planned_amount must be greater than 0")
 
         # Business rule: cannot plan for past months (only current or future)
         now = timezone.now()
@@ -115,10 +132,11 @@ class PlannedExpensePlanSerializer(serializers.ModelSerializer):
 
         request = self.context.get("request")
         user = request.user if request else None
+        profile = get_object_or_404(Profile, user=user) if user and user.is_authenticated else None
 
         plan = PlannedExpensePlan.objects.create(
             **validated_data,
-            family=user.family,
+            family=profile.family,
             created_by=user,
         )
 

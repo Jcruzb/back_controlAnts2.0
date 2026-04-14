@@ -4,7 +4,6 @@ from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 
 from core.models import Expense, Profile, Month
-from core.models import RecurringPayment
 from core.serializers.expense_serializer import ExpenseSerializer
 
 
@@ -17,6 +16,11 @@ class ExpenseViewSet(ModelViewSet):
 
         queryset = Expense.objects.filter(
             month__family=profile.family
+        ).select_related(
+            'category',
+            'month',
+            'planned_expense',
+            'recurring_payment',
         )
 
         year = self.request.query_params.get('year')
@@ -54,7 +58,7 @@ class ExpenseViewSet(ModelViewSet):
             raise ValidationError('This month is closed and cannot be modified')
 
         amount = serializer.validated_data.get('amount')
-        if amount <= 0:
+        if amount is None or amount <= 0:
             raise ValidationError({'amount': 'Amount must be greater than 0'})
 
         serializer.save(

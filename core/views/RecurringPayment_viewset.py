@@ -26,13 +26,13 @@ class RecurringPaymentViewSet(ModelViewSet):
         profile = get_object_or_404(Profile, user=self.request.user)
         return RecurringPayment.objects.filter(
             family=profile.family
-        )
+        ).select_related('category').order_by('name')
 
     def perform_create(self, serializer):
         profile = get_object_or_404(Profile, user=self.request.user)
 
         amount = serializer.validated_data.get("amount")
-        if amount <= 0:
+        if amount is None or amount <= 0:
             raise ValidationError({"amount": "Amount must be greater than 0"})
 
         start_date = serializer.validated_data.get("start_date")
@@ -48,9 +48,14 @@ class RecurringPaymentViewSet(ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        profile = get_object_or_404(Profile, user=self.request.user)
         amount = serializer.validated_data.get("amount")
         if amount is not None and amount <= 0:
             raise ValidationError({"amount": "Amount must be greater than 0"})
+
+        category = serializer.validated_data.get("category")
+        if category is not None and category.family_id != profile.family_id:
+            raise ValidationError({"category": "Category does not belong to your family"})
 
         end_date = serializer.validated_data.get("end_date")
         if end_date is not None:

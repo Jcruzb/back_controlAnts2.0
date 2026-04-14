@@ -74,10 +74,6 @@ def _to_decimal_amount(value) -> Decimal:
 
     return dec.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-
-# Helper to check for closed months in a range
-from typing import Optional
-# ...
 def _has_closed_months_in_range(family, start: Month, end: Optional[Month]) -> bool:
     """True if there is any closed Month within [start, end]. If end is None, checks from start onwards."""
     qs = Month.objects.filter(family=family, is_closed=True)
@@ -208,15 +204,30 @@ class IncomePlanViewSet(ModelViewSet):
             .order_by('-created_at')
         )
 
+        versions = (
+            IncomePlanVersion.objects.filter(plan__in=plans)
+            .filter(_lte_month_q('valid_from', year_int, month_int))
+            .filter(Q(valid_to__isnull=True) | _gte_month_q('valid_to', year_int, month_int))
+            .select_related('valid_from', 'valid_to')
+            .order_by('plan_id', 'valid_from__year', 'valid_from__month', 'created_at')
+        )
+        latest_versions = {}
+        for version in versions:
+            latest_versions[version.plan_id] = version
+
+        existing_incomes = (
+            Income.objects.filter(month=month_obj, income_plan__in=plans)
+            .select_related('category')
+            .order_by('income_plan_id', '-created_at')
+        )
+        resolved_incomes = {}
+        for income in existing_incomes:
+            resolved_incomes.setdefault(income.income_plan_id, income)
+
         results = []
         for plan in plans:
-            version = _get_version_for_month(plan, year_int, month_int)
-            existing_income = (
-                Income.objects.filter(month=month_obj, income_plan=plan)
-                .select_related('category')
-                .order_by('-created_at')
-                .first()
-            )
+            version = latest_versions.get(plan.id)
+            existing_income = resolved_incomes.get(plan.id)
 
             if existing_income:
                 status = 'RESOLVED'

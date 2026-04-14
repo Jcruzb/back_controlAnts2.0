@@ -12,7 +12,7 @@ class CategoryViewSet(ModelViewSet):
 
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
-        return Category.objects.filter(family=profile.family)
+        return Category.objects.filter(family=profile.family).order_by('name')
 
     def perform_create(self, serializer):
         profile = get_object_or_404(Profile, user=self.request.user)

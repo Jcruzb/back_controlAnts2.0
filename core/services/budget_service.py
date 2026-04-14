@@ -20,9 +20,6 @@ class BudgetService:
         self.year = year
         self.month = month
 
-        print("/////////self.month\\\\\\\\\\")
-        print(self.month)
-
     def get_month(self):
         month, _ = Month.objects.get_or_create(
             family=self.family,
@@ -48,9 +45,6 @@ class BudgetService:
         return "ok", ratio, planned - spent
 
     def get_active_recurring_payments(self):
-        print("/////////Getting recurrences\\\\\\\\\\")
-        print(self.family, self.year, self.month)
-        
         month_start = date(self.year, self.month, 1)
         month_end = date(
             self.year,
@@ -64,20 +58,27 @@ class BudgetService:
             start_date__lte=month_end,
         ).filter(
             Q(end_date__isnull=True) | Q(end_date__gte=month_start)
-        )
+        ).select_related("category")
+
     def get_recurring_summary(self):
-        recurrences = self.get_active_recurring_payments()
+        recurrences = list(self.get_active_recurring_payments())
+        recurring_totals = {
+            row["recurring_payment"]: row["total"] or 0
+            for row in (
+                Expense.objects.filter(
+                    recurring_payment__in=recurrences,
+                    month__family=self.family,
+                    month__year=self.year,
+                    month__month=self.month,
+                )
+                .values("recurring_payment")
+                .annotate(total=Sum("amount"))
+            )
+        }
         result = []
 
         for rec in recurrences:
-            spent = (
-                Expense.objects.filter(
-                    recurring_payment=rec,
-                    month__year=self.year,
-                    month__month=self.month,
-                ).aggregate(total=Sum("amount"))["total"]
-                or 0
-            )
+            spent = recurring_totals.get(rec.id, 0)
 
             status, ratio, remaining = self._calculate_status(rec.amount, spent)
 
@@ -109,7 +110,22 @@ class BudgetService:
             start_month__lte=month_obj,
         ).filter(
             Q(end_month__isnull=True) | Q(end_month__gte=month_obj)
-        )
+        ).select_related("category")
+
+        category_ids = [plan.category_id for plan in plans]
+        category_totals = {
+            row["category"]: row["total"] or 0
+            for row in (
+                Expense.objects.filter(
+                    month__family=self.family,
+                    month__year=self.year,
+                    month__month=self.month,
+                    category_id__in=category_ids,
+                )
+                .values("category")
+                .annotate(total=Sum("amount"))
+            )
+        }
 
         result = []
 
@@ -129,14 +145,7 @@ class BudgetService:
             if not version:
                 continue
 
-            spent = (
-                Expense.objects.filter(
-                    month__year=self.year,
-                    month__month=self.month,
-                    category=plan.category,
-                ).aggregate(total=Sum("amount"))["total"]
-                or 0
-            )
+            spent = category_totals.get(plan.category_id, 0)
 
             status, ratio, remaining = self._calculate_status(
                 version.planned_amount,
@@ -161,11 +170,11 @@ class BudgetService:
             family=self.family,
             month__year=self.year,
             month__month=self.month,
-        )
+        ).select_related("category").annotate(spent_total=Sum("expenses__amount"))
 
         result = []
         for p in planned:
-            spent = p.expenses.aggregate(total=Sum("amount"))["total"] or 0
+            spent = p.spent_total or 0
 
             status, ratio, remaining = self._calculate_status(p.planned_amount, spent)
 
@@ -184,6 +193,7 @@ class BudgetService:
     def get_unplanned_expenses_total(self):
         return (
             Expense.objects.filter(
+                month__family=self.family,
                 month__year=self.year,
                 month__month=self.month,
                 planned_expense__isnull=True,

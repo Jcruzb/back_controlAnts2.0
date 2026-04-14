@@ -46,22 +46,33 @@ def build_income_plan_month_status(family, year: int, month: int):
         Q(end_month__isnull=True) | _gte_month_q('end_month', year, month)
     ).select_related('category', 'start_month', 'end_month').order_by('-created_at')
 
+    versions = (
+        IncomePlanVersion.objects.filter(plan__in=plans)
+        .filter(_lte_month_q('valid_from', year, month))
+        .filter(Q(valid_to__isnull=True) | _gte_month_q('valid_to', year, month))
+        .select_related('valid_from', 'valid_to')
+        .order_by('plan_id', 'valid_from__year', 'valid_from__month', 'created_at')
+    )
+    latest_versions = {}
+    for version in versions:
+        latest_versions[version.plan_id] = version
+
+    existing_incomes = (
+        Income.objects.filter(
+            month=month_obj,
+            income_plan__in=plans,
+        )
+        .select_related('category')
+        .order_by('income_plan_id', '-created_at')
+    )
+    resolved_incomes = {}
+    for income in existing_incomes:
+        resolved_incomes.setdefault(income.income_plan_id, income)
+
     results = []
     for plan in plans:
-        version = IncomePlanVersion.objects.filter(
-            plan=plan,
-        ).filter(
-            _lte_month_q('valid_from', year, month)
-        ).filter(
-            Q(valid_to__isnull=True) | _gte_month_q('valid_to', year, month)
-        ).select_related('valid_from', 'valid_to').order_by(
-            'valid_from__year', 'valid_from__month', 'created_at'
-        ).last()
-
-        existing_income = Income.objects.filter(
-            month=month_obj,
-            income_plan=plan,
-        ).select_related('category').order_by('-created_at').first()
+        version = latest_versions.get(plan.id)
+        existing_income = resolved_incomes.get(plan.id)
 
         if existing_income:
             status = 'RESOLVED'

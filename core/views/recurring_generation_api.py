@@ -41,19 +41,22 @@ class GenerateRecurringExpensesAPIView(APIView):
             start_date__lte=today,
         ).filter(
             models.Q(end_date__isnull=True) | models.Q(end_date__gte=today)
+        ).select_related("category")
+
+        existing_recurring_ids = set(
+            Expense.objects.filter(
+                month=month_obj,
+                recurring_payment__in=recurring_payments,
+            ).values_list("recurring_payment_id", flat=True)
         )
 
-        for rp in recurring_payments:
-            exists = Expense.objects.filter(
-                month=month_obj,
-                recurring_payment=rp,
-            ).exists()
+        last_day = calendar.monthrange(year, month_num)[1]
 
-            if exists:
+        for rp in recurring_payments:
+            if rp.id in existing_recurring_ids:
                 skipped += 1
                 continue
 
-            last_day = calendar.monthrange(year, month_num)[1]
             day = min(rp.due_day, last_day)
             expense_date = date(year, month_num, day)
             Expense.objects.create(
