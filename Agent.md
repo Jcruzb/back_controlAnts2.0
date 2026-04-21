@@ -44,6 +44,7 @@ Main endpoints:
 - `GET/POST/PUT/PATCH/DELETE /api/expenses/`
 - `GET/POST/PUT/PATCH/DELETE /api/categories/`
 - `GET/POST/PUT/PATCH/DELETE /api/recurring-payments/`
+- `GET /api/recurring-payments/{id}/payments/`
 - `GET/POST/PUT/PATCH/DELETE /api/planned-expenses/`
 - `GET/POST/PUT/PATCH/DELETE /api/planned-expense-plans/`
 - `GET/POST/PUT/PATCH/DELETE /api/income-plans/`
@@ -64,6 +65,7 @@ Custom actions:
 - `POST /api/income-plans/{id}/deactivate/`
 - `POST /api/income-plans/{id}/reactivate/`
 - `POST /api/recurring-payments/{id}/reactivate/`
+- `GET /api/recurring-payments/{id}/payments/`
 
 ## Current API Notes
 
@@ -110,6 +112,11 @@ Budget aggregation currently combines both systems in the same response.
 - `category`: numeric category id
 - `category_name`
 - `category_detail`
+
+### Recurring payment detail contract
+
+`GET /api/recurring-payments/{id}/payments/` returns the recurring payment itself plus a `payments` array with all associated `Expense` rows linked by `Expense.recurring_payment`.
+This is the intended backend contract for the frontend "detalle rapido del gasto" use case and avoids client-side joins across separate endpoints.
 
 ### Seed commands
 
@@ -188,7 +195,7 @@ Relevant code:
 
 ### 5. Medium: test coverage exists now, but it is still narrow
 
-The current tests cover multi-tenant boundaries and budget category payload shape.
+The current tests cover multi-tenant boundaries, budget category payload shape, and recurring payment detail retrieval.
 They do not yet cover closed-month enforcement across all endpoints, plan-version overlap behavior, seed commands, auth session flow, or recurring generation.
 
 Relevant file:

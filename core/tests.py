@@ -2,6 +2,7 @@ from datetime import date
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from core.models import (
@@ -16,6 +17,7 @@ from core.models import (
 )
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class MultiTenantSecurityTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -123,7 +125,7 @@ class MultiTenantSecurityTests(TestCase):
         response = self.client.get("/api/budget/?year=2026&month=4")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(str(response.data["unplanned_total"]), "20")
+        self.assertEqual(str(response.data["unplanned_total"]), "20.00")
 
     def test_budget_includes_consistent_category_fields_in_recurring_and_planned(self):
         recurring = RecurringPayment.objects.create(
@@ -203,3 +205,64 @@ class MultiTenantSecurityTests(TestCase):
             self.assertIn("category_detail", item)
             self.assertEqual(item["category"], item["category_detail"]["id"])
             self.assertEqual(item["category_name"], item["category_detail"]["name"])
+
+    def test_recurring_payment_payments_endpoint_returns_recurring_with_payments(self):
+        recurring = RecurringPayment.objects.create(
+            family=self.family_a,
+            category=self.category_a,
+            name="Netflix",
+            amount="15.99",
+            due_day=5,
+            start_date=date(2026, 1, 1),
+            active=True,
+        )
+        newer_payment = Expense.objects.create(
+            month=self.month_a,
+            user=self.user_a,
+            amount="15.99",
+            category=self.category_a,
+            recurring_payment=recurring,
+            date=date(2026, 4, 5),
+            description="Netflix abril",
+            is_recurring=True,
+        )
+        older_month = Month.objects.create(family=self.family_a, year=2026, month=3)
+        older_payment = Expense.objects.create(
+            month=older_month,
+            user=self.user_a,
+            amount="15.99",
+            category=self.category_a,
+            recurring_payment=recurring,
+            date=date(2026, 3, 5),
+            description="Netflix marzo",
+            is_recurring=True,
+        )
+
+        self.client.force_authenticate(user=self.user_a)
+        response = self.client.get(f"/api/recurring-payments/{recurring.id}/payments/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], recurring.id)
+        self.assertEqual(response.data["name"], "Netflix")
+        self.assertEqual(response.data["category"], self.category_a.id)
+        self.assertEqual(len(response.data["payments"]), 2)
+        self.assertEqual(response.data["payments"][0]["id"], newer_payment.id)
+        self.assertEqual(response.data["payments"][1]["id"], older_payment.id)
+        self.assertEqual(response.data["payments"][0]["recurring_payment"], recurring.id)
+        self.assertTrue(response.data["payments"][0]["is_recurring"])
+
+    def test_recurring_payment_payments_endpoint_is_scoped_by_family(self):
+        recurring = RecurringPayment.objects.create(
+            family=self.family_b,
+            category=self.category_b,
+            name="Privado",
+            amount="20.00",
+            due_day=1,
+            start_date=date(2026, 1, 1),
+            active=True,
+        )
+
+        self.client.force_authenticate(user=self.user_a)
+        response = self.client.get(f"/api/recurring-payments/{recurring.id}/payments/")
+
+        self.assertEqual(response.status_code, 404)

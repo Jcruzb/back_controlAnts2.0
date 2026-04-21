@@ -1,3 +1,4 @@
+from django.db.models import Prefetch
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
@@ -6,8 +7,11 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 
-from core.models import RecurringPayment, Profile
-from core.serializers.recurringPayment_serializer import RecurringPaymentSerializer
+from core.models import Expense, RecurringPayment, Profile
+from core.serializers.recurringPayment_serializer import (
+    RecurringPaymentPaymentsSerializer,
+    RecurringPaymentSerializer,
+)
 
 
 class RecurringPaymentViewSet(ModelViewSet):
@@ -89,4 +93,25 @@ class RecurringPaymentViewSet(ModelViewSet):
         recurring.save()
 
         serializer = self.get_serializer(recurring)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"])
+    def payments(self, request, pk=None):
+        profile = get_object_or_404(Profile, user=request.user)
+        payments_qs = (
+            Expense.objects.filter(month__family=profile.family)
+            .select_related("month", "category", "planned_expense", "recurring_payment")
+            .order_by("-date", "-created_at")
+        )
+        recurring = get_object_or_404(
+            self.get_queryset().prefetch_related(
+                Prefetch(
+                    "generated_expenses",
+                    queryset=payments_qs,
+                    to_attr="prefetched_generated_expenses",
+                )
+            ),
+            pk=pk,
+        )
+        serializer = RecurringPaymentPaymentsSerializer(recurring, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
