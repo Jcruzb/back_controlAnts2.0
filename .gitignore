@@ -12,6 +12,7 @@ venv/
 .env.*
 .env
 .envrc
+!.env.example
 
 # Django
 *.log

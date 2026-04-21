@@ -8,7 +8,7 @@ The API is mounted under `/api/` and uses session authentication.
 Core business concepts:
 
 - `Family`: tenant boundary.
-- `Profile`: links `User` to a `Family` and role.
+- `Profile`: links `User` to a `Family` and stores a `role`.
 - `Month`: monthly ledger per family, with `is_closed` to block edits.
 - `Category`: family-owned classification for income and expenses.
 - `Expense`: actual outgoing movement.
@@ -37,16 +37,22 @@ Base URL config:
 
 Main endpoints:
 
-- `GET/POST /api/incomes/`
 - `GET /api/budget/?year=YYYY&month=MM`
 - `POST /api/recurring/generate/`
-- `GET/POST/PUT/DELETE /api/expenses/`
-- `GET/POST/PUT/DELETE /api/categories/`
-- `GET/POST/PUT/DELETE /api/recurring-payments/`
-- `GET/POST/PUT/DELETE /api/planned-expenses/`
-- `GET/POST/PUT/DELETE /api/planned-expense-plans/`
-- `GET/POST/PUT/DELETE /api/income-plans/`
-- `GET/POST/PUT/DELETE /api/income-plan-versions/`
+- `GET/POST /api/incomes/`
+- `GET/PUT/PATCH/DELETE /api/incomes/{id}/`
+- `GET/POST/PUT/PATCH/DELETE /api/expenses/`
+- `GET/POST/PUT/PATCH/DELETE /api/categories/`
+- `GET/POST/PUT/PATCH/DELETE /api/recurring-payments/`
+- `GET/POST/PUT/PATCH/DELETE /api/planned-expenses/`
+- `GET/POST/PUT/PATCH/DELETE /api/planned-expense-plans/`
+- `GET/POST/PUT/PATCH/DELETE /api/income-plans/`
+- `GET/POST/PUT/PATCH/DELETE /api/income-plan-versions/`
+- `POST /api/auth/register/`
+- `POST /api/auth/login/`
+- `POST /api/auth/logout/`
+- `GET /api/auth/me/`
+- `GET /api/csrf/`
 
 Custom actions:
 
@@ -55,22 +61,30 @@ Custom actions:
 - `GET /api/income-plans/month/?year=YYYY&month=MM`
 - `POST /api/income-plans/{id}/confirm/`
 - `POST /api/income-plans/{id}/adjust/`
+- `POST /api/income-plans/{id}/deactivate/`
+- `POST /api/income-plans/{id}/reactivate/`
 - `POST /api/recurring-payments/{id}/reactivate/`
 
-## Domain Notes
+## Current API Notes
 
 ### Tenant model
 
-Most views correctly scope data through `request.user.profile.family`.
-That is the effective multi-tenant boundary in this codebase.
+The effective tenant boundary is `request.user.profile.family`.
+Most current views correctly scope reads and writes through `Profile`.
+
+### Auth model
+
+- Session auth is the default DRF authentication class.
+- Registration creates a new user, a dedicated family, and promotes the creator to `profile.role = "admin"`.
+- `Profile.role` exists, but today it is descriptive rather than enforced.
 
 ### Closed months
 
 `Month.is_closed` is a central business rule:
 
 - closed months should not accept create/update/delete operations
-- income plan resolution also respects closed months
-- budget endpoints create the `Month` row lazily if it does not exist
+- recurring generation and income plan resolution should respect closed months
+- budget endpoints lazily create the `Month` row if it does not exist
 
 ### Planning systems
 
@@ -79,20 +93,45 @@ There are two expense-planning systems in parallel:
 1. Legacy: `PlannedExpense`
 2. Newer: `PlannedExpensePlan` + `PlannedExpenseVersion`
 
-Budget aggregation currently combines both systems.
+Budget aggregation currently combines both systems in the same response.
 
-### Income workflow
+### Budget contract
 
-The income plan flow is more mature than the planned-expense-plan flow:
+`GET /api/budget/` returns:
 
-- `IncomePlan` defines applicability window and category
-- `IncomePlanVersion` defines amount over a month range
-- `/income-plans/month/` returns month status (`PENDING`, `RESOLVED`, `MISSING_VERSION`)
-- `/confirm/` and `/adjust/` materialize an `Income` row for the selected month
+- month metadata (`month_id`, `year`, `month`)
+- top-level totals (`total_planned`, `total_spent`, `unplanned_total`, `remaining_amount`, `percentage_used`, `status`)
+- `recurring`
+- `planned`
+- `income_plan_month`
+
+`planned` and `recurring` now expose consistent category fields:
+
+- `category`: numeric category id
+- `category_name`
+- `category_detail`
+
+### Seed commands
+
+Available local seeds:
+
+- [core/management/commands/seed_users.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/management/commands/seed_users.py)
+- [core/management/commands/seed_categories.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/management/commands/seed_categories.py)
+
+Seed payloads:
+
+- [core/seeds/users.json](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/seeds/users.json)
+- [core/seeds/categories.json](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/seeds/categories.json)
+
+Typical local usage:
+
+- `./venv/bin/python manage.py seed_users`
+- `./venv/bin/python manage.py seed_categories`
 
 ## Important Files
 
 - [core/models.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/models.py)
+- [core/views/auth_view.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/auth_view.py)
 - [core/views/budget_view.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/budget_view.py)
 - [core/services/budget_service.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/services/budget_service.py)
 - [core/views/income_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/income_viewset.py)
@@ -100,61 +139,80 @@ The income plan flow is more mature than the planned-expense-plan flow:
 - [core/views/plannedIncome_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/plannedIncome_viewset.py)
 - [core/views/planned_expense_plan_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/planned_expense_plan_viewset.py)
 - [core/serializers/planned_expense_plan_serializer.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/serializers/planned_expense_plan_serializer.py)
+- [core/tests.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/tests.py)
 
-## Risks Found During Review
+## Audit Snapshot
 
-### 1. `PlannedExpensePlan` uses `user.family` instead of `user.profile.family`
+Audit refreshed on April 14, 2026 against the current workspace.
 
-The new planned-expense serializer assumes a direct `family` attribute on `User`, but the rest of the codebase uses `Profile`.
-This likely breaks creation/validation for planned expense plans unless `User` has been extended elsewhere.
+### 1. High: plaintext credentials are stored in the repository
 
-Relevant code:
+The repository currently contains credential material in tracked local files and seed data.
+That is an operational security problem even for development because it normalizes password reuse and makes accidental exposure much easier.
 
-- [core/serializers/planned_expense_plan_serializer.py:43](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/serializers/planned_expense_plan_serializer.py#L43)
-- [core/serializers/planned_expense_plan_serializer.py:88](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/serializers/planned_expense_plan_serializer.py#L88)
-- [core/serializers/planned_expense_plan_serializer.py:121](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/serializers/planned_expense_plan_serializer.py#L121)
+Relevant files:
 
-### 2. Budget totals can double-count expenses covered by `PlannedExpensePlan`
+- [core/seeds/users.json](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/seeds/users.json)
+- [.env](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/.env)
 
-`get_planned_plans_summary()` counts spend by category for ongoing plans, but `get_unplanned_expenses_total()` still includes those same expenses because `Expense` has no link to `PlannedExpensePlan`.
-That means `total_spent` can count the same expense once inside planned summaries and again inside `unplanned_total`.
+### 2. High: budget totals can still double-count spend when `PlannedExpensePlan` is involved
 
-Relevant code:
-
-- [core/services/budget_service.py:97](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/services/budget_service.py#L97)
-- [core/services/budget_service.py:184](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/services/budget_service.py#L184)
-- [core/services/budget_service.py:206](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/services/budget_service.py#L206)
-
-### 3. Updating a planned-expense plan creates overlapping versions
-
-When a plan is updated, the previous version is closed with `valid_to = plan.start_month`, and the new version also starts at `plan.start_month`.
-If month ranges are inclusive, both versions apply to the same month.
+`get_planned_plans_summary()` measures spend by category for ongoing plans, but `Expense` has no foreign key to `PlannedExpensePlan`.
+Because of that, the same expense can appear inside a planned-plan summary and also remain inside `unplanned_total`, which inflates `total_spent`.
 
 Relevant code:
 
-- [core/views/planned_expense_plan_viewset.py:64](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/planned_expense_plan_viewset.py#L64)
-- [core/views/planned_expense_plan_viewset.py:69](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/planned_expense_plan_viewset.py#L69)
+- [core/services/budget_service.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/services/budget_service.py)
 
-### 4. New users are auto-attached to the first family in the database
+### 3. High: plan updates can create overlapping versions
 
-The `post_save` hook assigns every new user to `Family.objects.first()`.
-In a real multi-tenant app this can silently attach users to the wrong tenant, and if no family exists the user may be left without `Profile`.
+Both plan systems can auto-create a new version on update when `planned_amount` changes, but they do not close the previous version range before creating the new one.
+That conflicts with the stricter overlap rules already enforced in the explicit version CRUD for income plans and makes version history ambiguous.
 
 Relevant code:
 
-- [core/models.py:225](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/models.py#L225)
+- [core/views/planned_income_plan_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/planned_income_plan_viewset.py)
+- [core/views/planned_expense_plan_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/planned_expense_plan_viewset.py)
+- [core/views/plannedIncome_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/plannedIncome_viewset.py)
+
+### 4. Medium: `Profile.role` is not enforced anywhere
+
+The system models `admin` vs `member`, but no authorization layer uses that distinction.
+In practice, any authenticated family member can mutate categories, recurring payments, plans, and budget-affecting resources.
+
+Relevant code:
+
+- [core/models.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/models.py)
+- [core/views/auth_view.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/auth_view.py)
+- [core/urls.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/urls.py)
+
+### 5. Medium: test coverage exists now, but it is still narrow
+
+The current tests cover multi-tenant boundaries and budget category payload shape.
+They do not yet cover closed-month enforcement across all endpoints, plan-version overlap behavior, seed commands, auth session flow, or recurring generation.
+
+Relevant file:
+
+- [core/tests.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/tests.py)
+
+### 6. Low: there is dead duplicate budget view code under serializers
+
+[core/serializers/budget_serializer.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/serializers/budget_serializer.py) contains an unused `BudgetView`.
+Routing uses [core/views/budget_view.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/budget_view.py), so the serializer file is misleading and should either be deleted or renamed.
 
 ## Operational Notes
 
-- `README.md` is currently almost empty, so code is the source of truth.
-- There is no meaningful automated test suite yet in [core/tests.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/tests.py).
-- Local verification in this workspace was limited because `python3 manage.py check` failed: Django is not installed in the active environment.
-- There is a duplicate `BudgetView` definition inside [core/serializers/budget_serializer.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/serializers/budget_serializer.py), but it does not appear to be wired into routing.
+- Use the project virtualenv when running management commands:
+  - `./venv/bin/python manage.py ...`
+- `README.md` is still minimal, so this file and the code are the main source of truth.
+- Session/CORS settings are environment-driven and safer than before, but there is still no dedicated `dev` vs `prod` settings split.
+- Local verification in this workspace is easiest through the project virtualenv and lightweight checks such as `py_compile` when DB access is not available.
 
 ## Recommended Next Steps
 
-1. Standardize all family access on `request.user.profile.family`.
-2. Decide whether the legacy and new planned-expense systems will coexist or one will replace the other.
-3. Fix budget aggregation so `unplanned_total` excludes expenses already represented in planned summaries.
-4. Add tests around month closing, income-plan resolution, and budget totals.
-5. Replace the implicit `Family.objects.first()` onboarding behavior with an explicit family assignment flow.
+1. Remove plaintext credentials from tracked files and rotate any reused passwords.
+2. Decide how planned-plan spend should be linked so `budget.total_spent` cannot double-count category-based plan spend.
+3. Unify version history rules across `IncomePlan` and `PlannedExpensePlan`, including explicit closure of previous ranges.
+4. Enforce `Profile.role` with permissions for admin-only mutations.
+5. Expand tests around closed months, version history, auth/session behavior, and seed commands.
+6. Remove dead code such as the duplicate budget view under serializers and keep docs aligned with the routed implementation.
