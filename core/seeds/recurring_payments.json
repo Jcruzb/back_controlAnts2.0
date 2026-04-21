@@ -1,0 +1,384 @@
+{
+  "recurring_payments": [
+    {
+      "family": "CruzPa",
+      "category": "Transporte",
+      "name": "Abono Juan transporte",
+      "amount": "20.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Servicios",
+      "name": "Agua",
+      "amount": "40.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Servicios",
+      "name": "Agua Caliente",
+      "amount": "60.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Blanca",
+      "name": "Ahorro diente Blanca",
+      "amount": "19.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Tarjeta de crédito",
+      "name": "Airpods Juan",
+      "amount": "120.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Suscripciones",
+      "name": "Apple one",
+      "amount": "25.95",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Juan",
+      "name": "Apple Watch",
+      "amount": "14.86",
+      "due_day": 31,
+      "start_date": "2026-04-01",
+      "end_date": "2027-12-01",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Alimentación",
+      "name": "Café capsulas",
+      "amount": "50.00",
+      "due_day": 10,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Tarjeta de crédito",
+      "name": "Cetelem",
+      "amount": "102.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Suscripciones",
+      "name": "ChatGPT",
+      "amount": "23.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "coche",
+      "name": "Compra de Toyota Corolla",
+      "amount": "276.10",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": "2033-01-02",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "casa",
+      "name": "Deuda cama",
+      "amount": "84.53",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": "2026-09-01",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Telefonía",
+      "name": "Digi+Fibra+Móvil",
+      "amount": "17.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Juan",
+      "name": "Gafas JC",
+      "amount": "12.38",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "coche",
+      "name": "Gasolina",
+      "amount": "70.00",
+      "due_day": 10,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Suscripciones",
+      "name": "HBO",
+      "amount": "6.99",
+      "due_day": 27,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "casa",
+      "name": "Ikea Compras casa",
+      "amount": "69.82",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": "2027-02-01",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Juan",
+      "name": "Iphone JC",
+      "amount": "65.13",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": "2026-10-02",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Joy",
+      "name": "Joy (ropa, medicina)",
+      "amount": "100.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Joy",
+      "name": "Joy Splash (26/05/2025)",
+      "amount": "202.75",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Juan",
+      "name": "Klarna adidas",
+      "amount": "9.33",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Blanca",
+      "name": "Klarna entrada Shakira",
+      "amount": "40.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "casa",
+      "name": "Lavavajillas",
+      "amount": "62.03",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": "2026-12-01",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "casa",
+      "name": "Limpieza Oscar",
+      "amount": "65.90",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Juan",
+      "name": "MacBook Air JC",
+      "amount": "89.00",
+      "due_day": 5,
+      "start_date": "2026-04-01",
+      "end_date": "2026-07-05",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "coche",
+      "name": "Mantenimiento de coche",
+      "amount": "500.00",
+      "due_day": 15,
+      "start_date": "2026-08-01",
+      "end_date": "2026-08-30",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "casa",
+      "name": "Nevera - Lavadora",
+      "amount": "124.07",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": "2026-08-01",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Suscripciones",
+      "name": "Office",
+      "amount": "10.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Padres",
+      "name": "Padres",
+      "amount": "104.99",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Préstamo",
+      "name": "Préstamo Caixa",
+      "amount": "176.38",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": "2028-01-01",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Servicios",
+      "name": "Recibo de Luz",
+      "amount": "60.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "casa",
+      "name": "Renta",
+      "amount": "1203.93",
+      "due_day": 5,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "casa",
+      "name": "Roomba",
+      "amount": "34.08",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": "2026-05-31",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Salidas",
+      "name": "Salidas",
+      "amount": "100.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Seguros",
+      "name": "Seguro caixabox",
+      "amount": "18.21",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": "2028-01-01",
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Alimentación",
+      "name": "Supermercado",
+      "amount": "500.00",
+      "due_day": 5,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Inversión",
+      "name": "Trade republic",
+      "amount": "200.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    },
+    {
+      "family": "CruzPa",
+      "category": "Inversión",
+      "name": "Trade republic inversion",
+      "amount": "100.00",
+      "due_day": 1,
+      "start_date": "2026-04-01",
+      "end_date": null,
+      "active": true
+    }
+  ]
+}
