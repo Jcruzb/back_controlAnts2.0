@@ -2,6 +2,7 @@ import json
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -96,12 +97,26 @@ class Command(BaseCommand):
 
         end_date = recurring_payment_data.get("end_date")
         active = recurring_payment_data.get("active", True)
+        payer = None
+        payer_username = (recurring_payment_data.get("payer") or "").strip()
+        if payer_username:
+            payer = User.objects.filter(
+                username=payer_username,
+                profile__family=family,
+                is_active=True,
+            ).first()
+            if payer is None:
+                raise CommandError(
+                    f"Payer not found for recurring payment '{name}': "
+                    f"family={family_name} username={payer_username}"
+                )
 
         recurring_payment, created = RecurringPayment.objects.update_or_create(
             family=family,
             name=name,
             defaults={
                 "category": category,
+                "payer": payer,
                 "amount": amount,
                 "due_day": due_day,
                 "start_date": start_date,

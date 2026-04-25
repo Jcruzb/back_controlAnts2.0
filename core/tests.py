@@ -3,6 +3,7 @@ from datetime import date
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from core.models import (
@@ -85,6 +86,107 @@ class MultiTenantSecurityTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("category", response.data)
 
+    def test_expense_accepts_family_payer_and_defaults_to_request_user(self):
+        family_member = User.objects.create_user(username="ana", password="secret123")
+        family_member.profile.family = self.family_a
+        family_member.profile.save(update_fields=["family"])
+
+        self.client.force_authenticate(user=self.user_a)
+
+        with_payer = self.client.post(
+            "/api/expenses/",
+            {
+                "description": "Compra familiar",
+                "amount": "42.00",
+                "category": self.category_a.id,
+                "payer": family_member.id,
+                "date": "2026-04-10",
+            },
+            format="json",
+        )
+        self.assertEqual(with_payer.status_code, 201)
+        self.assertEqual(with_payer.data["payer"], family_member.id)
+        self.assertEqual(with_payer.data["payer_detail"]["username"], "ana")
+
+        without_payer = self.client.post(
+            "/api/expenses/",
+            {
+                "description": "Sin pagador explicito",
+                "amount": "20.00",
+                "category": self.category_a.id,
+                "date": "2026-04-11",
+            },
+            format="json",
+        )
+        self.assertEqual(without_payer.status_code, 201)
+        self.assertEqual(without_payer.data["payer"], self.user_a.id)
+
+    def test_expense_rejects_foreign_payer(self):
+        self.client.force_authenticate(user=self.user_a)
+
+        response = self.client.post(
+            "/api/expenses/",
+            {
+                "description": "Pagador cruzado",
+                "amount": "42.00",
+                "category": self.category_a.id,
+                "payer": self.user_b.id,
+                "date": "2026-04-10",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("payer", response.data)
+
+    def test_expenses_can_filter_by_payer(self):
+        family_member = User.objects.create_user(username="ana", password="secret123")
+        family_member.profile.family = self.family_a
+        family_member.profile.save(update_fields=["family"])
+
+        first = Expense.objects.create(
+            month=self.month_a,
+            user=self.user_a,
+            payer=self.user_a,
+            amount="20.00",
+            category=self.category_a,
+            date=date(2026, 4, 10),
+            description="Pagado por Alice",
+        )
+        Expense.objects.create(
+            month=self.month_a,
+            user=self.user_a,
+            payer=family_member,
+            amount="30.00",
+            category=self.category_a,
+            date=date(2026, 4, 11),
+            description="Pagado por Ana",
+        )
+
+        self.client.force_authenticate(user=self.user_a)
+        response = self.client.get(f"/api/expenses/?payer={self.user_a.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.data], [first.id])
+
+    def test_family_members_endpoint_returns_only_current_family_users(self):
+        family_member = User.objects.create_user(
+            username="ana",
+            password="secret123",
+            first_name="Ana",
+            last_name="Familia",
+        )
+        family_member.profile.family = self.family_a
+        family_member.profile.save(update_fields=["family"])
+
+        self.client.force_authenticate(user=self.user_a)
+        response = self.client.get("/api/family/members/")
+
+        self.assertEqual(response.status_code, 200)
+        usernames = {item["username"] for item in response.data}
+        self.assertEqual(usernames, {"alice", "ana"})
+        self.assertNotIn("bob", usernames)
+
     def test_recurring_payment_rejects_foreign_category(self):
         self.client.force_authenticate(user=self.user_a)
 
@@ -102,6 +204,25 @@ class MultiTenantSecurityTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("category", response.data)
+
+    def test_recurring_payment_rejects_foreign_payer(self):
+        self.client.force_authenticate(user=self.user_a)
+
+        response = self.client.post(
+            "/api/recurring-payments/",
+            {
+                "name": "Pago de otra familia",
+                "amount": "15.99",
+                "due_day": 5,
+                "category": self.category_a.id,
+                "payer": self.user_b.id,
+                "start_date": "2026-04-01",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("payer", response.data)
 
     def test_budget_only_uses_current_family_expenses(self):
         Expense.objects.create(
@@ -250,6 +371,26 @@ class MultiTenantSecurityTests(TestCase):
         self.assertEqual(response.data["payments"][1]["id"], older_payment.id)
         self.assertEqual(response.data["payments"][0]["recurring_payment"], recurring.id)
         self.assertTrue(response.data["payments"][0]["is_recurring"])
+
+    def test_generate_recurring_expenses_inherits_recurring_payer(self):
+        recurring = RecurringPayment.objects.create(
+            family=self.family_a,
+            category=self.category_a,
+            payer=self.user_a,
+            name="Internet",
+            amount="50.00",
+            due_day=5,
+            start_date=date(timezone.now().year, timezone.now().month, 1),
+            active=True,
+        )
+
+        self.client.force_authenticate(user=self.user_a)
+        response = self.client.post("/api/recurring/generate/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["created"], 1)
+        generated = Expense.objects.get(recurring_payment=recurring)
+        self.assertEqual(generated.payer_id, self.user_a.id)
 
     def test_recurring_payment_payments_endpoint_is_scoped_by_family(self):
         recurring = RecurringPayment.objects.create(

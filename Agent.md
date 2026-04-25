@@ -11,8 +11,8 @@ Core business concepts:
 - `Profile`: links `User` to a `Family` and stores a `role`.
 - `Month`: monthly ledger per family, with `is_closed` to block edits.
 - `Category`: family-owned classification for income and expenses.
-- `Expense`: actual outgoing movement.
-- `RecurringPayment`: fixed recurring expense definition.
+- `Expense`: actual outgoing movement. `user` is the creator/registrar; `payer` is the family user who paid or is paying.
+- `RecurringPayment`: fixed recurring expense definition. It can also define a `payer` used by generated expenses.
 - `PlannedExpense`: legacy monthly planned expense.
 - `PlannedExpensePlan` + `PlannedExpenseVersion`: newer planned-expense system with history.
 - `Income`: actual incoming movement.
@@ -45,6 +45,7 @@ Main endpoints:
 - `GET/POST/PUT/PATCH/DELETE /api/categories/`
 - `GET/POST/PUT/PATCH/DELETE /api/recurring-payments/`
 - `GET /api/recurring-payments/{id}/payments/`
+- `GET /api/family/members/`
 - `GET/POST/PUT/PATCH/DELETE /api/planned-expenses/`
 - `GET/POST/PUT/PATCH/DELETE /api/planned-expense-plans/`
 - `GET/POST/PUT/PATCH/DELETE /api/income-plans/`
@@ -113,6 +114,28 @@ Budget aggregation currently combines both systems in the same response.
 - `category_name`
 - `category_detail`
 
+`recurring` items also expose payer fields when available:
+
+- `payer`: numeric user id or `null`
+- `payer_detail`: family-member payload or `null`
+
+### Payer contract
+
+The backend supports "quien paga" without introducing a separate member model.
+The payer is a `User` constrained by `Profile.family`.
+
+Current contract:
+
+- `GET /api/family/members/` returns active users in the authenticated user's family for payer selectors.
+- `Expense.payer` is optional and accepts a family user id.
+- Creating an expense without `payer` defaults it to the authenticated user.
+- `GET /api/expenses/?payer={user_id}` filters expenses by payer.
+- `RecurringPayment.payer` is optional and accepts a family user id.
+- Generated recurring expenses inherit `RecurringPayment.payer`; if absent, they fall back to the authenticated user.
+- Expense and recurring-payment serializers return both `payer` and `payer_detail`.
+
+Frontend-specific notes live in [PAYER_FRONT.md](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/PAYER_FRONT.md).
+
 ### Recurring payment detail contract
 
 `GET /api/recurring-payments/{id}/payments/` returns the recurring payment itself plus a `payments` array with all associated `Expense` rows linked by `Expense.recurring_payment`.
@@ -124,16 +147,21 @@ Available local seeds:
 
 - [core/management/commands/seed_users.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/management/commands/seed_users.py)
 - [core/management/commands/seed_categories.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/management/commands/seed_categories.py)
+- [core/management/commands/seed_recurring_payments.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/management/commands/seed_recurring_payments.py)
 
 Seed payloads:
 
 - [core/seeds/users.json](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/seeds/users.json)
 - [core/seeds/categories.json](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/seeds/categories.json)
+- [core/seeds/recurring_payments.json](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/seeds/recurring_payments.json)
 
 Typical local usage:
 
 - `./venv/bin/python manage.py seed_users`
 - `./venv/bin/python manage.py seed_categories`
+- `./venv/bin/python manage.py seed_recurring_payments`
+
+Recurring-payment seed rows may include optional `payer` as a username. The command validates that the payer belongs to the same family.
 
 ## Important Files
 
@@ -146,11 +174,13 @@ Typical local usage:
 - [core/views/plannedIncome_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/plannedIncome_viewset.py)
 - [core/views/planned_expense_plan_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/planned_expense_plan_viewset.py)
 - [core/serializers/planned_expense_plan_serializer.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/serializers/planned_expense_plan_serializer.py)
+- [core/serializers/family_member_serializer.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/serializers/family_member_serializer.py)
+- [core/views/family_member_view.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/family_member_view.py)
 - [core/tests.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/tests.py)
 
 ## Audit Snapshot
 
-Audit refreshed on April 14, 2026 against the current workspace.
+Audit refreshed on April 25, 2026 against the current workspace.
 
 ### 1. High: plaintext credentials are stored in the repository
 
@@ -195,8 +225,8 @@ Relevant code:
 
 ### 5. Medium: test coverage exists now, but it is still narrow
 
-The current tests cover multi-tenant boundaries, budget category payload shape, and recurring payment detail retrieval.
-They do not yet cover closed-month enforcement across all endpoints, plan-version overlap behavior, seed commands, auth session flow, or recurring generation.
+The current tests cover multi-tenant boundaries, budget category payload shape, recurring payment detail retrieval, payer validation/defaulting/filtering, family-member listing, and recurring generation payer inheritance.
+They do not yet cover closed-month enforcement across all endpoints, plan-version overlap behavior, seed commands, or auth session flow.
 
 Relevant file:
 

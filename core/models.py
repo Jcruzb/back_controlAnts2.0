@@ -177,6 +177,13 @@ class PlannedExpense(models.Model):
 class Expense(models.Model):
     month = models.ForeignKey(Month, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
+    payer = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="paid_expenses",
+    )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     category = models.ForeignKey(Category, on_delete=models.PROTECT)
 
@@ -210,6 +217,13 @@ class RecurringPayment(models.Model):
         Category,
         on_delete=models.PROTECT,
         related_name="recurring_payments"
+    )
+    payer = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="recurring_payments_paid",
     )
     name = models.CharField(max_length=100)
     amount = models.DecimalField(max_digits=10, decimal_places=2)

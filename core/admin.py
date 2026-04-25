@@ -1,5 +1,14 @@
 from django.contrib import admin
-from .models import Family, Profile, Month, Income, Expense, RecurringPayment, Category, PlannedExpense
+from .models import (
+    Category,
+    Expense,
+    Family,
+    Income,
+    Month,
+    PlannedExpense,
+    RecurringPayment,
+    Profile,
+)
 
 admin.site.register(Family)
 admin.site.register(Profile)

@@ -61,6 +61,7 @@ class GenerateRecurringExpensesAPIView(APIView):
             expense_date = date(year, month_num, day)
             Expense.objects.create(
                 user=request.user,
+                payer=rp.payer or request.user,
                 month=month_obj,
                 recurring_payment=rp,
                 amount=rp.amount,

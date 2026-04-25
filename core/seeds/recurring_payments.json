@@ -2,6 +2,7 @@
   "recurring_payments": [
     {
       "family": "CruzPa",
+      "payer": "jcruz",
       "category": "Transporte",
       "name": "Abono Juan transporte",
       "amount": "20.00",
@@ -32,6 +33,7 @@
     },
     {
       "family": "CruzPa",
+      "payer": "bpariona",
       "category": "Blanca",
       "name": "Ahorro diente Blanca",
       "amount": "19.00",
@@ -62,6 +64,7 @@
     },
     {
       "family": "CruzPa",
+      "payer": "jcruz",
       "category": "Juan",
       "name": "Apple Watch",
       "amount": "14.86",

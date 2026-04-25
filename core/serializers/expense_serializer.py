@@ -1,11 +1,19 @@
 from rest_framework import serializers
 from django.shortcuts import get_object_or_404
+from django.contrib.auth.models import User
 
 from core.models import Expense, Category, PlannedExpense, Profile, RecurringPayment
+from core.serializers.family_member_serializer import FamilyMemberSerializer
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.none())
+    payer = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.none(),
+        required=False,
+        allow_null=True,
+    )
+    payer_detail = FamilyMemberSerializer(source="payer", read_only=True)
     planned_expense = serializers.PrimaryKeyRelatedField(
         queryset=PlannedExpense.objects.none(),
         required=False,
@@ -23,6 +31,10 @@ class ExpenseSerializer(serializers.ModelSerializer):
         if request and request.user and request.user.is_authenticated:
             profile = get_object_or_404(Profile, user=request.user)
             self.fields["category"].queryset = Category.objects.filter(family=profile.family)
+            self.fields["payer"].queryset = User.objects.filter(
+                profile__family=profile.family,
+                is_active=True,
+            )
             self.fields["planned_expense"].queryset = PlannedExpense.objects.filter(family=profile.family)
             self.fields["recurring_payment"].queryset = RecurringPayment.objects.filter(family=profile.family)
 
@@ -33,6 +45,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
             "description",
             "amount",
             "category",
+            "payer",
+            "payer_detail",
             "date",
             "month",
             "planned_expense",

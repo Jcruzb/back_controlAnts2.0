@@ -66,7 +66,7 @@ class BudgetService:
             start_date__lte=month_end,
         ).filter(
             Q(end_date__isnull=True) | Q(end_date__gte=month_start)
-        ).select_related("category")
+        ).select_related("category", "payer", "payer__profile")
 
     def get_recurring_summary(self):
         recurrences = list(self.get_active_recurring_payments())
@@ -94,6 +94,8 @@ class BudgetService:
                 "id": rec.id,
                 "name": rec.name,
                 **self._serialize_category(rec.category),
+                "payer": rec.payer_id,
+                "payer_detail": self._serialize_payer(rec.payer),
                 "planned_amount": rec.amount,
                 "spent_amount": spent,
                 "remaining_amount": remaining,
@@ -102,6 +104,22 @@ class BudgetService:
             })
 
         return result
+
+    def _serialize_payer(self, payer):
+        if payer is None:
+            return None
+
+        full_name = payer.get_full_name().strip()
+        role = getattr(getattr(payer, "profile", None), "role", None)
+        return {
+            "id": payer.id,
+            "username": payer.username,
+            "first_name": payer.first_name,
+            "last_name": payer.last_name,
+            "email": payer.email,
+            "display_name": full_name or payer.username,
+            "role": role,
+        }
 
     def get_planned_plans_summary(self):
         """

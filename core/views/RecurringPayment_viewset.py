@@ -30,7 +30,7 @@ class RecurringPaymentViewSet(ModelViewSet):
         profile = get_object_or_404(Profile, user=self.request.user)
         return RecurringPayment.objects.filter(
             family=profile.family
-        ).select_related('category').order_by('name')
+        ).select_related('category', 'payer', 'payer__profile').order_by('name')
 
     def perform_create(self, serializer):
         profile = get_object_or_404(Profile, user=self.request.user)
@@ -47,9 +47,11 @@ class RecurringPaymentViewSet(ModelViewSet):
                 {"end_date": "End date cannot be earlier than start date"}
             )
 
-        serializer.save(
-            family=profile.family
-        )
+        save_kwargs = {'family': profile.family}
+        if 'payer' not in serializer.validated_data:
+            save_kwargs['payer'] = self.request.user
+
+        serializer.save(**save_kwargs)
 
     def perform_update(self, serializer):
         profile = get_object_or_404(Profile, user=self.request.user)
@@ -100,7 +102,14 @@ class RecurringPaymentViewSet(ModelViewSet):
         profile = get_object_or_404(Profile, user=request.user)
         payments_qs = (
             Expense.objects.filter(month__family=profile.family)
-            .select_related("month", "category", "planned_expense", "recurring_payment")
+            .select_related(
+                "month",
+                "category",
+                "payer",
+                "payer__profile",
+                "planned_expense",
+                "recurring_payment",
+            )
             .order_by("-date", "-created_at")
         )
         recurring = get_object_or_404(

@@ -19,12 +19,16 @@ class ExpenseViewSet(ModelViewSet):
         ).select_related(
             'category',
             'month',
+            'user',
+            'payer',
+            'payer__profile',
             'planned_expense',
             'recurring_payment',
         )
 
         year = self.request.query_params.get('year')
         month = self.request.query_params.get('month')
+        payer = self.request.query_params.get('payer')
 
         if year and month:
             try:
@@ -37,6 +41,14 @@ class ExpenseViewSet(ModelViewSet):
                 month__year=year_int,
                 month__month=month_int
             )
+
+        if payer:
+            try:
+                payer_int = int(payer)
+            except (TypeError, ValueError):
+                raise ValidationError({'detail': 'Query param payer must be an integer'})
+
+            queryset = queryset.filter(payer_id=payer_int)
 
         return queryset
 
@@ -61,10 +73,14 @@ class ExpenseViewSet(ModelViewSet):
         if amount is None or amount <= 0:
             raise ValidationError({'amount': 'Amount must be greater than 0'})
 
-        serializer.save(
-            user=self.request.user,
-            month=month_obj,
-        )
+        save_kwargs = {
+            'user': self.request.user,
+            'month': month_obj,
+        }
+        if 'payer' not in serializer.validated_data:
+            save_kwargs['payer'] = self.request.user
+
+        serializer.save(**save_kwargs)
 
     def perform_update(self, serializer):
         instance = self.get_object()
