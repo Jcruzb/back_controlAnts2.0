@@ -10,6 +10,9 @@ from core.models import (
     Category,
     Expense,
     Family,
+    Income,
+    IncomePlan,
+    IncomePlanVersion,
     Month,
     PlannedExpense,
     PlannedExpensePlan,
@@ -407,3 +410,145 @@ class MultiTenantSecurityTests(TestCase):
         response = self.client.get(f"/api/recurring-payments/{recurring.id}/payments/")
 
         self.assertEqual(response.status_code, 404)
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class IncomePlanAdjustmentTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.family = Family.objects.create(name="Familia Sueldos")
+        self.user = User.objects.create_user(username="salary-user", password="secret123")
+        self.user.profile.family = self.family
+        self.user.profile.role = "admin"
+        self.user.profile.save(update_fields=["family", "role"])
+
+        self.category = Category.objects.create(
+            family=self.family,
+            name="Salario",
+            icon="salary",
+        )
+        self.months = {
+            month: Month.objects.create(family=self.family, year=2026, month=month)
+            for month in range(1, 13)
+        }
+        self.plan = IncomePlan.objects.create(
+            family=self.family,
+            category=self.category,
+            name="Nomina",
+            plan_type="ONGOING",
+            due_day=28,
+            active=True,
+            start_month=self.months[1],
+            created_by=self.user,
+        )
+        IncomePlanVersion.objects.create(
+            plan=self.plan,
+            planned_amount="1000.00",
+            valid_from=self.months[1],
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def _planned_amount_for_month(self, month):
+        response = self.client.get(f"/api/income-plans/month/?year=2026&month={month}")
+        self.assertEqual(response.status_code, 200)
+        result = next(
+            item for item in response.data["results"]
+            if item["plan_id"] == self.plan.id
+        )
+        return result["planned_amount"]
+
+    def _adjust(self, month, amount):
+        response = self.client.post(
+            f"/api/income-plans/{self.plan.id}/adjust/?year=2026&month={month}",
+            {
+                "amount": amount,
+                "description": f"Ajuste mes {month}",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def _active_versions_for_month(self, month):
+        month_obj = self.months[month]
+        versions = IncomePlanVersion.objects.filter(plan=self.plan).select_related(
+            "valid_from",
+            "valid_to",
+        )
+        active = []
+        for version in versions:
+            starts_before_or_at = (
+                version.valid_from.year,
+                version.valid_from.month,
+            ) <= (month_obj.year, month_obj.month)
+            ends_after_or_at = (
+                version.valid_to is None
+                or (version.valid_to.year, version.valid_to.month) >= (month_obj.year, month_obj.month)
+            )
+            if starts_before_or_at and ends_after_or_at:
+                active.append(version)
+        return active
+
+    def test_adjustment_applies_forward_from_selected_month(self):
+        self.assertEqual(self._planned_amount_for_month(7), "1000.00")
+
+        self._adjust(8, "1300.00")
+
+        self.assertEqual(self._planned_amount_for_month(7), "1000.00")
+        self.assertEqual(self._planned_amount_for_month(8), "1300.00")
+        self.assertEqual(self._planned_amount_for_month(9), "1300.00")
+        self.assertEqual(self._planned_amount_for_month(10), "1300.00")
+
+    def test_second_later_adjustment_preserves_previous_range(self):
+        self._adjust(8, "1300.00")
+        self._adjust(11, "1500.00")
+
+        self.assertEqual(self._planned_amount_for_month(10), "1300.00")
+        self.assertEqual(self._planned_amount_for_month(11), "1500.00")
+        self.assertEqual(self._planned_amount_for_month(12), "1500.00")
+
+    def test_adjustments_do_not_leave_overlapping_active_versions(self):
+        self._adjust(8, "1300.00")
+        self._adjust(11, "1500.00")
+
+        for month in range(1, 13):
+            self.assertEqual(len(self._active_versions_for_month(month)), 1)
+
+        versions = list(
+            IncomePlanVersion.objects.filter(plan=self.plan)
+            .select_related("valid_from", "valid_to")
+            .order_by("valid_from__month")
+        )
+        self.assertEqual(len(versions), 3)
+        self.assertEqual(versions[0].valid_from.month, 1)
+        self.assertEqual(versions[0].valid_to.month, 7)
+        self.assertEqual(versions[1].valid_from.month, 8)
+        self.assertEqual(versions[1].valid_to.month, 10)
+        self.assertEqual(versions[2].valid_from.month, 11)
+        self.assertIsNone(versions[2].valid_to)
+
+    def test_confirm_does_not_change_plan_versions(self):
+        self._adjust(8, "1300.00")
+        before_versions = list(
+            IncomePlanVersion.objects.filter(plan=self.plan)
+            .order_by("valid_from__month")
+            .values_list("planned_amount", "valid_from__month", "valid_to__month")
+        )
+
+        response = self.client.post(
+            f"/api/income-plans/{self.plan.id}/confirm/?year=2026&month=9",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        income = Income.objects.get(id=response.data["income_id"])
+        self.assertEqual(str(income.amount), "1300.00")
+
+        after_versions = list(
+            IncomePlanVersion.objects.filter(plan=self.plan)
+            .order_by("valid_from__month")
+            .values_list("planned_amount", "valid_from__month", "valid_to__month")
+        )
+        self.assertEqual(after_versions, before_versions)
+        self.assertEqual(self._planned_amount_for_month(10), "1300.00")

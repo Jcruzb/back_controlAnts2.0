@@ -4,6 +4,7 @@ import datetime
 from typing import Optional
 
 from django.db import IntegrityError
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import action
@@ -42,6 +43,31 @@ def _get_version_for_month(plan: IncomePlan, year: int, month: int):
         .order_by('valid_from__year', 'valid_from__month', 'created_at')
         .last()
     )
+
+
+def _get_or_create_month(family, year: int, month: int) -> Month:
+    month_obj, _ = Month.objects.get_or_create(
+        family=family,
+        year=year,
+        month=month,
+        defaults={'is_closed': False},
+    )
+    return month_obj
+
+
+def _previous_month(family, month_obj: Month) -> Month:
+    if month_obj.month == 1:
+        year = month_obj.year - 1
+        month = 12
+    else:
+        year = month_obj.year
+        month = month_obj.month - 1
+
+    return _get_or_create_month(family, year, month)
+
+
+def _month_before(family, month_obj: Month) -> Month:
+    return _previous_month(family, month_obj)
 
 
 def _default_income_date(year: int, month: int, due_day: int = None) -> datetime.date:
@@ -86,6 +112,22 @@ def _has_closed_months_in_range(family, start: Month, end: Optional[Month]) -> b
         qs = qs.filter(le_end)
 
     return qs.exists()
+
+
+def _version_starts_after(version: IncomePlanVersion, month_obj: Month) -> bool:
+    return _month_key(version.valid_from) > _month_key(month_obj)
+
+
+def _version_starts_before(version: IncomePlanVersion, month_obj: Month) -> bool:
+    return _month_key(version.valid_from) < _month_key(month_obj)
+
+
+def _version_starts_at(version: IncomePlanVersion, month_obj: Month) -> bool:
+    return _month_key(version.valid_from) == _month_key(month_obj)
+
+
+def _version_reaches_month(version: IncomePlanVersion, month_obj: Month) -> bool:
+    return version.valid_to is None or _month_key(version.valid_to) >= _month_key(month_obj)
 
 
 class IncomePlanViewSet(ModelViewSet):
@@ -226,6 +268,61 @@ class IncomePlanViewSet(ModelViewSet):
             raise ValidationError({'detail': 'Plan does not apply to this month'})
         if plan.end_month is not None and (plan.end_month.year, plan.end_month.month) < (year, month):
             raise ValidationError({'detail': 'Plan does not apply to this month'})
+
+    def _apply_forward_adjustment(self, profile, plan: IncomePlan, effective_month: Month, amount: Decimal):
+        if effective_month.family_id != profile.family_id:
+            raise ValidationError({'month': 'Month does not belong to your family'})
+
+        if effective_month.is_closed or _has_closed_months_in_range(profile.family, effective_month, None):
+            raise ValidationError({'detail': 'This month is closed and cannot be modified'})
+
+        versions = list(
+            IncomePlanVersion.objects.filter(plan=plan)
+            .select_related('valid_from', 'valid_to')
+            .order_by('valid_from__year', 'valid_from__month', 'created_at')
+        )
+
+        current_version = _get_version_for_month(plan, effective_month.year, effective_month.month)
+        same_start_version = next(
+            (version for version in versions if _version_starts_at(version, effective_month)),
+            None,
+        )
+        next_future_version = next(
+            (version for version in versions if _version_starts_after(version, effective_month)),
+            None,
+        )
+
+        if (
+            current_version is not None
+            and same_start_version is None
+            and current_version.planned_amount == amount
+        ):
+            return current_version
+
+        previous_month = _previous_month(profile.family, effective_month)
+        new_valid_to = (
+            _month_before(profile.family, next_future_version.valid_from)
+            if next_future_version is not None
+            else None
+        )
+
+        for version in versions:
+            if _version_starts_before(version, effective_month) and _version_reaches_month(version, effective_month):
+                version.valid_to = previous_month
+                version.save(update_fields=['valid_to'])
+
+        if same_start_version is not None:
+            same_start_version.planned_amount = amount
+            same_start_version.valid_to = new_valid_to
+            same_start_version.save(update_fields=['planned_amount', 'valid_to'])
+            return same_start_version
+
+        return IncomePlanVersion.objects.create(
+            plan=plan,
+            planned_amount=amount,
+            valid_from=effective_month,
+            valid_to=new_valid_to,
+        )
 
     @action(detail=True, methods=['post'], url_path='deactivate')
     def deactivate(self, request, pk=None):
@@ -398,20 +495,41 @@ class IncomePlanViewSet(ModelViewSet):
         return Response({'detail': 'OK', 'income_id': income.id})
 
     @action(detail=True, methods=['post'], url_path='adjust')
+    @transaction.atomic
     def adjust(self, request, pk=None):
         year_int, month_int = self._parse_year_month(request)
         plan = self.get_object()
 
-        amount = request.data.get('amount')
+        amount = request.data.get('amount', request.data.get('planned_amount'))
+        amount_value = _to_decimal_amount(amount)
         date_value = request.data.get('date')
         description = request.data.get('description', '')
+        profile = get_object_or_404(Profile, user=request.user)
+
+        plan = IncomePlan.objects.select_related('start_month', 'end_month', 'category').get(id=plan.id)
+        if plan.family_id != profile.family_id:
+            raise ValidationError({'detail': 'Not allowed'})
+        self._ensure_plan_applies(plan, year_int, month_int)
+
+        effective_month = _get_or_create_month(
+            family=profile.family,
+            year=year_int,
+            month=month_int,
+        )
+
+        self._apply_forward_adjustment(
+            profile=profile,
+            plan=plan,
+            effective_month=effective_month,
+            amount=amount_value,
+        )
 
         income = self._create_income_for_plan(
             request,
             plan,
             year_int,
             month_int,
-            amount=amount,
+            amount=amount_value,
             date_value=date_value,
             description=description,
         )

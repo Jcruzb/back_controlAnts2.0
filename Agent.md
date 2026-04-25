@@ -98,6 +98,23 @@ There are two expense-planning systems in parallel:
 
 Budget aggregation currently combines both systems in the same response.
 
+### Income plan adjustment contract
+
+`IncomePlan` uses `IncomePlanVersion` ranges to decide the planned amount for a month.
+For recurrent incomes such as salaries, `POST /api/income-plans/{id}/adjust/?year=YYYY&month=MM` means:
+
+> change this recurrent income from the selected month forward.
+
+Current behavior:
+
+- `adjust` accepts `amount` and also tolerates `planned_amount` as an alias.
+- `adjust` creates or updates an `IncomePlanVersion` starting in the selected month.
+- The previously active version is closed on the month before the adjustment.
+- Later pre-existing versions are preserved, so the new version ends the month before the next future version if one exists.
+- `adjust` still creates the real `Income` for the selected month, preserving the existing frontend contract.
+- `confirm` creates the real `Income` from the currently effective version and does not change version ranges.
+- `GET /api/income-plans/month/?year=YYYY&month=MM` resolves the latest version whose `valid_from` is before or equal to the month and whose `valid_to` is empty or after/equal to the month.
+
 ### Budget contract
 
 `GET /api/budget/` returns:
@@ -201,14 +218,14 @@ Relevant code:
 
 - [core/services/budget_service.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/services/budget_service.py)
 
-### 3. High: plan updates can create overlapping versions
+### 3. High: planned-expense plan updates can create overlapping versions
 
-Both plan systems can auto-create a new version on update when `planned_amount` changes, but they do not close the previous version range before creating the new one.
-That conflicts with the stricter overlap rules already enforced in the explicit version CRUD for income plans and makes version history ambiguous.
+The income-plan `adjust` action now closes the previous `IncomePlanVersion` range before opening the new one.
+However, the planned-expense plan update flow can still auto-create a new version when `planned_amount` changes without closing the previous version range.
+That conflicts with the stricter overlap rules already enforced in explicit version CRUD and makes planned-expense version history ambiguous.
 
 Relevant code:
 
-- [core/views/planned_income_plan_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/planned_income_plan_viewset.py)
 - [core/views/planned_expense_plan_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/planned_expense_plan_viewset.py)
 - [core/views/plannedIncome_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/plannedIncome_viewset.py)
 
@@ -225,7 +242,7 @@ Relevant code:
 
 ### 5. Medium: test coverage exists now, but it is still narrow
 
-The current tests cover multi-tenant boundaries, budget category payload shape, recurring payment detail retrieval, payer validation/defaulting/filtering, family-member listing, and recurring generation payer inheritance.
+The current tests cover multi-tenant boundaries, budget category payload shape, recurring payment detail retrieval, payer validation/defaulting/filtering, family-member listing, recurring generation payer inheritance, and forward income-plan adjustments.
 They do not yet cover closed-month enforcement across all endpoints, plan-version overlap behavior, seed commands, or auth session flow.
 
 Relevant file:
@@ -249,7 +266,7 @@ Routing uses [core/views/budget_view.py](/Users/juancruzballadares/Desktop/Proye
 
 1. Remove plaintext credentials from tracked files and rotate any reused passwords.
 2. Decide how planned-plan spend should be linked so `budget.total_spent` cannot double-count category-based plan spend.
-3. Unify version history rules across `IncomePlan` and `PlannedExpensePlan`, including explicit closure of previous ranges.
+3. Unify remaining planned-expense version history rules with the income-plan adjustment behavior, including explicit closure of previous ranges.
 4. Enforce `Profile.role` with permissions for admin-only mutations.
 5. Expand tests around closed months, version history, auth/session behavior, and seed commands.
 6. Remove dead code such as the duplicate budget view under serializers and keep docs aligned with the routed implementation.
