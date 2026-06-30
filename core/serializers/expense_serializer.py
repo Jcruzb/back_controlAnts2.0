@@ -4,9 +4,11 @@ from django.contrib.auth.models import User
 
 from core.models import Expense, Category, PlannedExpense, Profile, RecurringPayment
 from core.serializers.family_member_serializer import FamilyMemberSerializer
+from core.services.recurring_payment_service import get_recurring_payment_month_state
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
+    recurring_payment_month = serializers.SerializerMethodField()
     category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.none())
     payer = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.none(),
@@ -51,6 +53,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             "month",
             "planned_expense",
             "recurring_payment",
+            "recurring_payment_month",
             "is_recurring",
         ]
         read_only_fields = ("month",)
@@ -74,3 +77,35 @@ class ExpenseSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+
+    def get_recurring_payment_month(self, obj):
+        if obj.recurring_payment_id is None:
+            return None
+
+        cache = getattr(self, "_recurring_payment_month_cache", None)
+        if cache is None:
+            cache = {}
+            self._recurring_payment_month_cache = cache
+
+        key = (obj.recurring_payment_id, obj.month_id)
+        if key not in cache:
+            occurrence, amounts = get_recurring_payment_month_state(
+                recurring_payment=obj.recurring_payment,
+                month=obj.month,
+            )
+            cache[key] = {
+                "id": occurrence.id,
+                "recurring_payment": obj.recurring_payment_id,
+                "month": obj.month_id,
+                "year": obj.month.year,
+                "month_number": obj.month.month,
+                "planned_amount": amounts.planned_amount,
+                "paid_amount": amounts.paid_amount,
+                "pending_amount": amounts.pending_amount,
+                "difference_amount": amounts.difference_amount,
+                "is_completed": amounts.is_completed,
+                "status": amounts.payment_status,
+                "payment_status": amounts.payment_status,
+            }
+
+        return cache[key]

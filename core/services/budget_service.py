@@ -1,5 +1,6 @@
 from datetime import date
 from calendar import monthrange
+from decimal import Decimal
 from django.db.models import Sum, Q
 
 
@@ -10,9 +11,13 @@ from core.models import (
     PlannedExpensePlan,
     PlannedExpenseVersion,
     RecurringPayment,
+    RecurringPaymentOccurrence,
 )
 from core.serializers.category_serializer import CategorySerializer
 from core.services.budget_rules import WARNING_THRESHOLD, OVER_THRESHOLD
+from core.services.recurring_payment_service import (
+    calculate_recurring_payment_amounts,
+)
 
 
 class BudgetService:
@@ -70,6 +75,34 @@ class BudgetService:
 
     def get_recurring_summary(self):
         recurrences = list(self.get_active_recurring_payments())
+        month_obj = self.get_month()
+        existing_occurrences = {
+            occurrence.recurring_payment_id: occurrence
+            for occurrence in RecurringPaymentOccurrence.objects.filter(
+                recurring_payment__in=recurrences,
+                month=month_obj,
+            )
+        }
+        missing_occurrences = [
+            RecurringPaymentOccurrence(
+                recurring_payment=recurrence,
+                month=month_obj,
+            )
+            for recurrence in recurrences
+            if recurrence.id not in existing_occurrences
+        ]
+        if missing_occurrences:
+            RecurringPaymentOccurrence.objects.bulk_create(
+                missing_occurrences,
+                ignore_conflicts=True,
+            )
+            existing_occurrences = {
+                occurrence.recurring_payment_id: occurrence
+                for occurrence in RecurringPaymentOccurrence.objects.filter(
+                    recurring_payment__in=recurrences,
+                    month=month_obj,
+                )
+            }
         recurring_totals = {
             row["recurring_payment"]: row["total"] or 0
             for row in (
@@ -87,18 +120,35 @@ class BudgetService:
 
         for rec in recurrences:
             spent = recurring_totals.get(rec.id, 0)
+            occurrence = existing_occurrences[rec.id]
+            amounts = calculate_recurring_payment_amounts(
+                planned_amount=rec.amount,
+                paid_amount=spent,
+                is_completed=occurrence.is_completed,
+            )
 
-            status, ratio, remaining = self._calculate_status(rec.amount, spent)
+            status, ratio, _ = self._calculate_status(
+                amounts.planned_amount,
+                amounts.paid_amount,
+            )
 
             result.append({
                 "id": rec.id,
+                "occurrence_id": occurrence.id,
                 "name": rec.name,
                 **self._serialize_category(rec.category),
                 "payer": rec.payer_id,
                 "payer_detail": self._serialize_payer(rec.payer),
-                "planned_amount": rec.amount,
-                "spent_amount": spent,
-                "remaining_amount": remaining,
+                "planned_amount": amounts.planned_amount,
+                "paid_amount": amounts.paid_amount,
+                "pending_amount": amounts.pending_amount,
+                "difference_amount": amounts.difference_amount,
+                "is_completed": amounts.is_completed,
+                "payment_status": amounts.payment_status,
+                # Backwards-compatible aliases. ``remaining_amount`` now has
+                # the unambiguous obligation semantics requested by the API.
+                "spent_amount": amounts.paid_amount,
+                "remaining_amount": amounts.pending_amount,
                 "percentage_used": round(ratio * 100, 2),
                 "status": status,
             })
@@ -217,7 +267,7 @@ class BudgetService:
         return result
 
     def get_unplanned_expenses_total(self):
-        return (
+        total = (
             Expense.objects.filter(
                 month__family=self.family,
                 month__year=self.year,
@@ -227,6 +277,7 @@ class BudgetService:
             ).aggregate(total=Sum("amount"))["total"]
             or 0
         )
+        return Decimal(total).quantize(Decimal("0.01"))
 
     def build_budget(self):
         month = self.get_month()
@@ -245,6 +296,10 @@ class BudgetService:
         ) + unplanned_total
 
         status, ratio, remaining = self._calculate_status(total_planned, total_spent)
+        recurring_pending_amount = sum(r["pending_amount"] for r in recurring)
+        planned_pending_amount = sum(
+            max(p["remaining_amount"], 0) for p in planned
+        )
 
         return {
             "month_id": month.id,
@@ -253,6 +308,9 @@ class BudgetService:
             "status": status,
             "percentage_used": round(ratio * 100, 2),
             "remaining_amount": remaining,
+            "difference_amount": remaining,
+            "recurring_pending_amount": recurring_pending_amount,
+            "total_pending_amount": recurring_pending_amount + planned_pending_amount,
             "recurring": recurring,
             "planned": planned,
             "unplanned_total": unplanned_total,

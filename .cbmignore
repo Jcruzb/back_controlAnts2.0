@@ -1,0 +1,45 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+.envrc
+*.pem
+*.key
+*credentials*
+*secret*
+core/seeds/users.json
+
+# Dependencies, caches, and generated output
+.git/
+.codex/
+.codebase-memory/
+.venv/
+venv/
+env/
+__pycache__/
+.pytest_cache/
+pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+coverage/
+dist/
+build/
+staticfiles/
+.cache/
+.tmp/
+tmp/
+*.pyc
+*.pyo
+*.log
+*.tmp
+*.sqlite
+*.sqlite3
+*.db
+
+# User data and exports
+media/
+uploads/
+exports/
+backups/
+generated/

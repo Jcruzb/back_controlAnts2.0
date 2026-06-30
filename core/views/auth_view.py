@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.models import User
 from django.db import transaction
 from rest_framework import status
@@ -7,7 +8,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.models import Family, Profile
-from core.serializers.auth_serializer import LoginSerializer, RegisterSerializer
+from core.serializers.auth_serializer import (
+    ChangePasswordSerializer,
+    LoginSerializer,
+    MeSerializer,
+    RegisterSerializer,
+)
 
 
 def _ensure_profile(user: User):
@@ -29,11 +35,7 @@ def _auth_payload(user: User):
     profile = _ensure_profile(user)
     return {
         "authenticated": True,
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-        },
+        "user": MeSerializer(user).data,
         "profile": {
             "role": profile.role,
         },
@@ -112,3 +114,30 @@ class MeView(APIView):
 
     def get(self, request):
         return Response(_auth_payload(request.user), status=status.HTTP_200_OK)
+
+    def patch(self, request):
+        serializer = MeSerializer(
+            instance=request.user,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(_auth_payload(request.user), status=status.HTTP_200_OK)
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        update_session_auth_hash(request, request.user)
+        return Response(
+            {"detail": "Password updated successfully."},
+            status=status.HTTP_200_OK,
+        )

@@ -10,6 +10,9 @@ from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 
 from core.models import RecurringPayment, Expense, Month, Profile
+from core.services.recurring_payment_service import (
+    get_or_create_recurring_payment_occurrence,
+)
 
 
 class GenerateRecurringExpensesAPIView(APIView):
@@ -34,6 +37,7 @@ class GenerateRecurringExpensesAPIView(APIView):
 
         created = 0
         skipped = 0
+        completed_skipped = 0
 
         recurring_payments = RecurringPayment.objects.filter(
             family=profile.family,
@@ -53,6 +57,14 @@ class GenerateRecurringExpensesAPIView(APIView):
         last_day = calendar.monthrange(year, month_num)[1]
 
         for rp in recurring_payments:
+            occurrence = get_or_create_recurring_payment_occurrence(
+                recurring_payment=rp,
+                month=month_obj,
+            )
+            if occurrence.is_completed:
+                completed_skipped += 1
+                continue
+
             if rp.id in existing_recurring_ids:
                 skipped += 1
                 continue
@@ -76,4 +88,5 @@ class GenerateRecurringExpensesAPIView(APIView):
             'month': f'{year}-{month_num}',
             'created': created,
             'skipped': skipped,
+            'completed_skipped': completed_skipped,
         })

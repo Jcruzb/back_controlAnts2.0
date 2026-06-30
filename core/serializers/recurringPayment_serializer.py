@@ -70,3 +70,7 @@ class RecurringPaymentPaymentsSerializer(RecurringPaymentSerializer):
                 "recurring_payment",
             ).order_by("-date", "-created_at")
         return ExpenseSerializer(payments, many=True, context=self.context).data
+
+
+class RecurringPaymentCompletionSerializer(serializers.Serializer):
+    is_completed = serializers.BooleanField()

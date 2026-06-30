@@ -10,7 +10,13 @@ from core.views.plannedExpense_viewset import PlannedExpenseViewSet
 from core.views.planned_expense_plan_viewset import PlannedExpensePlanViewSet
 from core.views.csrf_view import csrf
 from core.views.budget_view import BudgetView
-from core.views.auth_view import LoginView, LogoutView, MeView, RegisterView
+from core.views.auth_view import (
+    ChangePasswordView,
+    LoginView,
+    LogoutView,
+    MeView,
+    RegisterView,
+)
 from core.views.family_member_view import FamilyMemberListView
 
 from core.views.planned_income_plan_viewset import IncomePlanViewSet
@@ -69,6 +75,7 @@ urlpatterns = [
     path('auth/login/', LoginView.as_view(), name='auth-login'),
     path('auth/logout/', LogoutView.as_view(), name='auth-logout'),
     path('auth/me/', MeView.as_view(), name='auth-me'),
+    path('auth/change-password/', ChangePasswordView.as_view(), name='auth-change-password'),
     path("budget/", BudgetView.as_view(), name="budget"),
     path("family/members/", FamilyMemberListView.as_view(), name="family-members"),
 ]

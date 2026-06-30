@@ -5,11 +5,32 @@ from django.shortcuts import get_object_or_404
 
 from core.models import Expense, Profile, Month
 from core.serializers.expense_serializer import ExpenseSerializer
+from core.services.recurring_payment_service import (
+    get_or_create_recurring_payment_occurrence,
+)
 
 
 class ExpenseViewSet(ModelViewSet):
     serializer_class = ExpenseSerializer
     permission_classes = [IsAuthenticated]
+
+    def _ensure_recurring_occurrence_is_open(self, *, recurring_payment, month):
+        if recurring_payment is None:
+            return
+
+        occurrence = get_or_create_recurring_payment_occurrence(
+            recurring_payment=recurring_payment,
+            month=month,
+        )
+        if occurrence.is_completed:
+            raise ValidationError(
+                {
+                    'recurring_payment': (
+                        'This recurring payment is completed for the selected month. '
+                        'Reopen it before changing its movements.'
+                    )
+                }
+            )
 
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
@@ -73,6 +94,11 @@ class ExpenseViewSet(ModelViewSet):
         if amount is None or amount <= 0:
             raise ValidationError({'amount': 'Amount must be greater than 0'})
 
+        self._ensure_recurring_occurrence_is_open(
+            recurring_payment=serializer.validated_data.get('recurring_payment'),
+            month=month_obj,
+        )
+
         save_kwargs = {
             'user': self.request.user,
             'month': month_obj,
@@ -88,6 +114,11 @@ class ExpenseViewSet(ModelViewSet):
         # If the existing month is closed, do not allow any modification
         if instance.month.is_closed:
             raise ValidationError('This month is closed and cannot be modified')
+
+        self._ensure_recurring_occurrence_is_open(
+            recurring_payment=instance.recurring_payment,
+            month=instance.month,
+        )
 
         # Validate amount if provided
         amount = serializer.validated_data.get('amount')
@@ -109,8 +140,22 @@ class ExpenseViewSet(ModelViewSet):
             if month_obj.is_closed:
                 raise ValidationError('This month is closed and cannot be modified')
 
+            self._ensure_recurring_occurrence_is_open(
+                recurring_payment=serializer.validated_data.get(
+                    'recurring_payment', instance.recurring_payment
+                ),
+                month=month_obj,
+            )
+
             serializer.save(month=month_obj)
             return
+
+        self._ensure_recurring_occurrence_is_open(
+            recurring_payment=serializer.validated_data.get(
+                'recurring_payment', instance.recurring_payment
+            ),
+            month=instance.month,
+        )
 
         serializer.save()
 
@@ -118,6 +163,11 @@ class ExpenseViewSet(ModelViewSet):
         # Block deletes for closed months
         if instance.month.is_closed:
             raise ValidationError('This month is closed and cannot be modified')
+
+        self._ensure_recurring_occurrence_is_open(
+            recurring_payment=instance.recurring_payment,
+            month=instance.month,
+        )
 
         instance.delete()
         

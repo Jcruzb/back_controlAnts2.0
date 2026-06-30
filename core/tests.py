@@ -1,5 +1,7 @@
-from datetime import date
+from datetime import date, timedelta
+from decimal import Decimal
 
+from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.test import override_settings
@@ -18,6 +20,10 @@ from core.models import (
     PlannedExpensePlan,
     PlannedExpenseVersion,
     RecurringPayment,
+    RecurringPaymentOccurrence,
+)
+from core.services.recurring_payment_service import (
+    calculate_recurring_payment_amounts,
 )
 
 
@@ -552,3 +558,407 @@ class IncomePlanAdjustmentTests(TestCase):
         )
         self.assertEqual(after_versions, before_versions)
         self.assertEqual(self._planned_amount_for_month(10), "1300.00")
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class AuthSelfManagementTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="alice",
+            password="secret123",
+            first_name="Alice",
+            last_name="Liddell",
+            email="alice@example.com",
+        )
+
+    def test_me_get_returns_current_user_payload(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/auth/me/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["authenticated"])
+        self.assertEqual(response.data["user"]["username"], "alice")
+        self.assertEqual(response.data["user"]["first_name"], "Alice")
+        self.assertEqual(response.data["user"]["last_name"], "Liddell")
+        self.assertEqual(response.data["user"]["email"], "alice@example.com")
+        self.assertEqual(response.data["profile"]["role"], "member")
+        self.assertIn("family", response.data)
+
+    def test_me_patch_updates_basic_user_fields(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.patch(
+            "/api/auth/me/",
+            {
+                "first_name": "Alicia",
+                "last_name": "Wonderland",
+                "email": "alicia@example.com",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, "Alicia")
+        self.assertEqual(self.user.last_name, "Wonderland")
+        self.assertEqual(self.user.email, "alicia@example.com")
+        self.assertEqual(response.data["user"]["username"], "alice")
+        self.assertEqual(response.data["user"]["first_name"], "Alicia")
+
+    def test_change_password_succeeds_with_valid_current_password(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/auth/change-password/",
+            {
+                "current_password": "secret123",
+                "new_password": "newStrongPass123",
+                "new_password_confirm": "newStrongPass123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("newStrongPass123"))
+        self.assertIsNotNone(
+            authenticate(username="alice", password="newStrongPass123")
+        )
+
+    def test_change_password_rejects_incorrect_current_password(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/auth/change-password/",
+            {
+                "current_password": "wrong-password",
+                "new_password": "newStrongPass123",
+                "new_password_confirm": "newStrongPass123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("current_password", response.data)
+
+    def test_change_password_rejects_mismatched_confirmation(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/auth/change-password/",
+            {
+                "current_password": "secret123",
+                "new_password": "newStrongPass123",
+                "new_password_confirm": "differentPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("new_password_confirm", response.data)
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class RecurringPaymentMonthlyCompletionTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.family = Family.objects.create(name="Familia cierre mensual")
+        self.other_family = Family.objects.create(name="Otra familia")
+        self.user = User.objects.create_user(username="monthly-user", password="secret123")
+        self.other_user = User.objects.create_user(username="other-user", password="secret123")
+        self.user.profile.family = self.family
+        self.user.profile.save(update_fields=["family"])
+        self.other_user.profile.family = self.other_family
+        self.other_user.profile.save(update_fields=["family"])
+        self.category = Category.objects.create(
+            family=self.family,
+            name="Agua",
+            icon="water",
+        )
+        self.month_june = Month.objects.create(family=self.family, year=2026, month=6)
+        self.month_july = Month.objects.create(family=self.family, year=2026, month=7)
+        self.recurring = RecurringPayment.objects.create(
+            family=self.family,
+            category=self.category,
+            name="Agua",
+            amount=Decimal("40.00"),
+            due_day=10,
+            start_date=date(2026, 1, 1),
+            active=True,
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def _add_payment(self, amount, *, month=None, day=10):
+        month = month or self.month_june
+        return Expense.objects.create(
+            month=month,
+            user=self.user,
+            payer=self.user,
+            amount=Decimal(amount),
+            category=self.category,
+            recurring_payment=self.recurring,
+            date=date(month.year, month.month, day),
+            description="Factura de agua",
+        )
+
+    def _month_status_url(self, *, recurring=None, year=2026, month=6):
+        recurring = recurring or self.recurring
+        return (
+            f"/api/recurring-payments/{recurring.id}/month-status/"
+            f"?year={year}&month={month}"
+        )
+
+    def test_canonical_calculation_covers_pending_partial_completed_exact_and_exceeded(self):
+        cases = [
+            ("0.00", False, "40.00", "40.00", "pending"),
+            ("37.00", False, "3.00", "3.00", "partially_paid"),
+            ("37.00", True, "0.00", "3.00", "completed"),
+            ("40.00", False, "0.00", "0.00", "covered"),
+            ("45.00", False, "0.00", "-5.00", "exceeded"),
+        ]
+
+        for paid, completed, pending, difference, expected_status in cases:
+            with self.subTest(paid=paid, completed=completed):
+                amounts = calculate_recurring_payment_amounts(
+                    planned_amount=Decimal("40.00"),
+                    paid_amount=Decimal(paid),
+                    is_completed=completed,
+                )
+                self.assertEqual(amounts.pending_amount, Decimal(pending))
+                self.assertEqual(amounts.difference_amount, Decimal(difference))
+                self.assertEqual(amounts.payment_status, expected_status)
+                self.assertIsInstance(amounts.pending_amount, Decimal)
+                self.assertIsInstance(amounts.difference_amount, Decimal)
+
+    def test_complete_and_reopen_partial_payment_updates_budget_without_losing_difference(self):
+        self._add_payment("37.00")
+
+        open_budget = self.client.get("/api/budget/?year=2026&month=6")
+        self.assertEqual(open_budget.status_code, 200)
+        open_item = open_budget.data["recurring"][0]
+        self.assertEqual(str(open_item["paid_amount"]), "37.00")
+        self.assertEqual(str(open_item["pending_amount"]), "3.00")
+        self.assertEqual(str(open_item["difference_amount"]), "3.00")
+        self.assertEqual(open_item["payment_status"], "partially_paid")
+        self.assertFalse(open_item["is_completed"])
+
+        completed = self.client.patch(
+            self._month_status_url(),
+            {"is_completed": True},
+            format="json",
+        )
+        self.assertEqual(completed.status_code, 200)
+        self.assertEqual(str(completed.data["pending_amount"]), "0.00")
+        self.assertEqual(str(completed.data["difference_amount"]), "3.00")
+        self.assertEqual(completed.data["status"], "completed")
+
+        completed_budget = self.client.get("/api/budget/?year=2026&month=6")
+        item = completed_budget.data["recurring"][0]
+        self.assertEqual(str(item["pending_amount"]), "0.00")
+        self.assertEqual(str(item["remaining_amount"]), "0.00")
+        self.assertEqual(str(item["difference_amount"]), "3.00")
+        self.assertEqual(str(completed_budget.data["recurring_pending_amount"]), "0.00")
+        self.assertEqual(str(completed_budget.data["total_pending_amount"]), "0.00")
+        self.assertEqual(str(completed_budget.data["total_spent"]), "37.00")
+        self.assertEqual(str(completed_budget.data["remaining_amount"]), "3.00")
+        self.assertEqual(str(completed_budget.data["difference_amount"]), "3.00")
+
+        reopened = self.client.patch(
+            self._month_status_url(),
+            {"is_completed": False},
+            format="json",
+        )
+        self.assertEqual(reopened.status_code, 200)
+        self.assertEqual(str(reopened.data["pending_amount"]), "3.00")
+        self.assertEqual(reopened.data["status"], "partially_paid")
+
+    def test_expense_response_exposes_backend_month_calculation(self):
+        payment = self._add_payment("37.00")
+        self.client.patch(
+            self._month_status_url(),
+            {"is_completed": True},
+            format="json",
+        )
+
+        response = self.client.get(f"/api/expenses/{payment.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        month_state = response.data["recurring_payment_month"]
+        self.assertEqual(str(month_state["paid_amount"]), "37.00")
+        self.assertEqual(str(month_state["pending_amount"]), "0.00")
+        self.assertEqual(str(month_state["difference_amount"]), "3.00")
+        self.assertTrue(month_state["is_completed"])
+        self.assertEqual(month_state["status"], "completed")
+
+    def test_completed_occurrence_rejects_new_movements_until_reopened(self):
+        self.client.patch(
+            self._month_status_url(),
+            {"is_completed": True},
+            format="json",
+        )
+
+        rejected = self.client.post(
+            "/api/expenses/",
+            {
+                "description": "Movimiento tardio",
+                "amount": "3.00",
+                "category": self.category.id,
+                "recurring_payment": self.recurring.id,
+                "date": "2026-06-20",
+            },
+            format="json",
+        )
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn("recurring_payment", rejected.data)
+
+        self.client.patch(
+            self._month_status_url(),
+            {"is_completed": False},
+            format="json",
+        )
+        accepted = self.client.post(
+            "/api/expenses/",
+            {
+                "description": "Movimiento tras reapertura",
+                "amount": "3.00",
+                "category": self.category.id,
+                "recurring_payment": self.recurring.id,
+                "date": "2026-06-20",
+            },
+            format="json",
+        )
+        self.assertEqual(accepted.status_code, 201)
+
+    def test_budget_overpayment_never_has_negative_pending_amount(self):
+        self._add_payment("45.00")
+
+        response = self.client.get("/api/budget/?year=2026&month=6")
+
+        self.assertEqual(response.status_code, 200)
+        item = response.data["recurring"][0]
+        self.assertEqual(str(item["pending_amount"]), "0.00")
+        self.assertEqual(str(item["remaining_amount"]), "0.00")
+        self.assertEqual(str(item["difference_amount"]), "-5.00")
+        self.assertEqual(item["payment_status"], "exceeded")
+
+    def test_completion_is_isolated_by_month_and_does_not_change_template(self):
+        self.client.patch(
+            self._month_status_url(),
+            {"is_completed": True},
+            format="json",
+        )
+
+        july = self.client.get(self._month_status_url(year=2026, month=7))
+
+        self.assertEqual(july.status_code, 200)
+        self.assertFalse(july.data["is_completed"])
+        self.assertEqual(str(july.data["pending_amount"]), "40.00")
+        self.recurring.refresh_from_db()
+        self.assertTrue(self.recurring.active)
+        self.assertEqual(self.recurring.amount, Decimal("40.00"))
+
+    def test_user_cannot_complete_another_family_recurring_payment(self):
+        other_category = Category.objects.create(
+            family=self.other_family,
+            name="Privado",
+            icon="lock",
+        )
+        foreign_recurring = RecurringPayment.objects.create(
+            family=self.other_family,
+            category=other_category,
+            name="Privado",
+            amount=Decimal("20.00"),
+            due_day=1,
+            start_date=date(2026, 1, 1),
+        )
+
+        response = self.client.patch(
+            self._month_status_url(recurring=foreign_recurring),
+            {"is_completed": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(
+            RecurringPaymentOccurrence.objects.filter(
+                recurring_payment=foreign_recurring,
+                month__year=2026,
+                month__month=6,
+            ).exists()
+        )
+
+    def test_generation_creates_a_fresh_open_occurrence_after_completed_previous_month(self):
+        today = timezone.now().date()
+        current_month, _ = Month.objects.get_or_create(
+            family=self.family,
+            year=today.year,
+            month=today.month,
+        )
+        previous_date = today.replace(day=1) - timedelta(days=1)
+        previous_month, _ = Month.objects.get_or_create(
+            family=self.family,
+            year=previous_date.year,
+            month=previous_date.month,
+        )
+        self.recurring.start_date = previous_date.replace(day=1)
+        self.recurring.save(update_fields=["start_date"])
+        RecurringPaymentOccurrence.objects.create(
+            recurring_payment=self.recurring,
+            month=previous_month,
+            is_completed=True,
+        )
+
+        response = self.client.post("/api/recurring/generate/")
+
+        self.assertEqual(response.status_code, 200)
+        current_occurrence = RecurringPaymentOccurrence.objects.get(
+            recurring_payment=self.recurring,
+            month=current_month,
+        )
+        self.assertFalse(current_occurrence.is_completed)
+
+    def test_completed_occurrence_does_not_receive_generated_movement(self):
+        today = timezone.now().date()
+        current_month, _ = Month.objects.get_or_create(
+            family=self.family,
+            year=today.year,
+            month=today.month,
+        )
+        self.recurring.start_date = today.replace(day=1)
+        self.recurring.save(update_fields=["start_date"])
+        RecurringPaymentOccurrence.objects.create(
+            recurring_payment=self.recurring,
+            month=current_month,
+            is_completed=True,
+        )
+
+        response = self.client.post("/api/recurring/generate/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["completed_skipped"], 1)
+        self.assertFalse(
+            Expense.objects.filter(
+                recurring_payment=self.recurring,
+                month=current_month,
+            ).exists()
+        )
+
+    def test_closed_month_cannot_be_completed_or_reopened(self):
+        self.month_june.is_closed = True
+        self.month_june.save(update_fields=["is_closed"])
+
+        response = self.client.patch(
+            self._month_status_url(),
+            {"is_completed": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(
+            RecurringPaymentOccurrence.objects.get(
+                recurring_payment=self.recurring,
+                month=self.month_june,
+            ).is_completed
+        )

@@ -235,6 +235,43 @@ class RecurringPayment(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class RecurringPaymentOccurrence(models.Model):
+    """Monthly instance of a recurring payment.
+
+    Expenses remain the real money movements. This model stores the user's
+    explicit decision to close that month's obligation.
+    """
+
+    recurring_payment = models.ForeignKey(
+        RecurringPayment,
+        on_delete=models.CASCADE,
+        related_name="occurrences",
+    )
+    month = models.ForeignKey(
+        Month,
+        on_delete=models.CASCADE,
+        related_name="recurring_payment_occurrences",
+    )
+    is_completed = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recurring_payment", "month"],
+                name="uniq_recurring_payment_occurrence_month",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["month", "recurring_payment"],
+                name="idx_recurring_occ_month",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.recurring_payment.name} - {self.month}"
     
 @receiver(post_save, sender=User)
 def create_profile_for_user(sender, instance, created, **kwargs):

@@ -1,3 +1,6 @@
+import calendar
+from datetime import date
+
 from django.db.models import Prefetch
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
@@ -9,8 +12,13 @@ from django.shortcuts import get_object_or_404
 
 from core.models import Expense, RecurringPayment, Profile
 from core.serializers.recurringPayment_serializer import (
+    RecurringPaymentCompletionSerializer,
     RecurringPaymentPaymentsSerializer,
     RecurringPaymentSerializer,
+)
+from core.models import Month
+from core.services.recurring_payment_service import (
+    get_recurring_payment_month_state,
 )
 
 
@@ -124,3 +132,76 @@ class RecurringPaymentViewSet(ModelViewSet):
         )
         serializer = RecurringPaymentPaymentsSerializer(recurring, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get", "patch"], url_path="month-status")
+    def month_status(self, request, pk=None):
+        recurring = self.get_object()
+        year = request.query_params.get("year")
+        month_number = request.query_params.get("month")
+
+        if year is None or month_number is None:
+            raise ValidationError({"detail": "Query params year and month are required"})
+
+        try:
+            year = int(year)
+            month_number = int(month_number)
+            if year < 1 or year > 9999:
+                raise ValueError
+            last_day = calendar.monthrange(year, month_number)[1]
+        except (TypeError, ValueError):
+            raise ValidationError({"detail": "Query params year and month must be valid integers"})
+
+        month_start = date(year, month_number, 1)
+        month_end = date(year, month_number, last_day)
+        if recurring.start_date > month_end or (
+            recurring.end_date is not None and recurring.end_date < month_start
+        ):
+            raise ValidationError(
+                {"detail": "Recurring payment does not apply to the selected month"}
+            )
+
+        profile = get_object_or_404(Profile, user=request.user)
+        month_obj, _ = Month.objects.get_or_create(
+            family=profile.family,
+            year=year,
+            month=month_number,
+            defaults={"is_closed": False},
+        )
+
+        occurrence, amounts = get_recurring_payment_month_state(
+            recurring_payment=recurring,
+            month=month_obj,
+        )
+
+        if request.method == "PATCH":
+            if month_obj.is_closed:
+                raise ValidationError(
+                    {"detail": "This month is closed and cannot be modified"}
+                )
+
+            input_serializer = RecurringPaymentCompletionSerializer(data=request.data)
+            input_serializer.is_valid(raise_exception=True)
+            occurrence.is_completed = input_serializer.validated_data["is_completed"]
+            occurrence.save(update_fields=["is_completed"])
+            occurrence, amounts = get_recurring_payment_month_state(
+                recurring_payment=recurring,
+                month=month_obj,
+            )
+
+        return Response(
+            {
+                "id": occurrence.id,
+                "recurring_payment": recurring.id,
+                "month": month_obj.id,
+                "year": year,
+                "month_number": month_number,
+                "planned_amount": amounts.planned_amount,
+                "paid_amount": amounts.paid_amount,
+                "pending_amount": amounts.pending_amount,
+                "difference_amount": amounts.difference_amount,
+                "is_completed": amounts.is_completed,
+                "status": amounts.payment_status,
+                "payment_status": amounts.payment_status,
+            },
+            status=status.HTTP_200_OK,
+        )
