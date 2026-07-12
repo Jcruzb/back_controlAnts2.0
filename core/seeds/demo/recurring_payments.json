@@ -1,0 +1,11 @@
+{
+  "recurring_payments": [
+    {"name": "Alquiler", "amount": "1050.00", "due_day": 5, "category": "Vivienda", "payer": "demo@controlants.local"},
+    {"name": "Electricidad", "amount": "75.00", "due_day": 10, "category": "Vivienda", "payer": "blanca.demo@controlants.local"},
+    {"name": "Internet", "amount": "45.00", "due_day": 12, "category": "Suscripciones", "payer": "demo@controlants.local"},
+    {"name": "Seguro del coche", "amount": "55.00", "due_day": 15, "category": "Transporte", "payer": "demo@controlants.local"},
+    {"name": "Guardería", "amount": "320.00", "due_day": 3, "category": "Educación", "payer": "blanca.demo@controlants.local"},
+    {"name": "Netflix", "amount": "15.99", "due_day": 20, "category": "Suscripciones", "payer": "blanca.demo@controlants.local"},
+    {"name": "Gimnasio", "amount": "29.99", "due_day": 8, "category": "Salud", "payer": "demo@controlants.local"}
+  ]
+}

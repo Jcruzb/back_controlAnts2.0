@@ -1,0 +1,8 @@
+{
+  "family": "Familia Demo ControlAnts",
+  "prefix": "[DEMO] ",
+  "users": [
+    {"username": "demo@controlants.local", "password": "ControlAntsDemo2026!", "email": "demo@controlants.local", "first_name": "Juan", "last_name": "Demo", "role": "admin"},
+    {"username": "blanca.demo@controlants.local", "password": "ControlAntsDemo2026!", "email": "blanca.demo@controlants.local", "first_name": "Blanca", "last_name": "Demo", "role": "member"}
+  ]
+}

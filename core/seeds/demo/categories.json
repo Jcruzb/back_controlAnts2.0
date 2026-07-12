@@ -1,0 +1,14 @@
+{
+  "categories": [
+    {"name": "Vivienda", "icon": "🏠", "color": "#f59e0b", "description": "Alquiler, hipoteca y gastos del hogar"},
+    {"name": "Supermercado", "icon": "🛒", "color": "#22c55e", "description": "Compra de alimentación y productos del hogar"},
+    {"name": "Transporte", "icon": "🚗", "color": "#3b82f6", "description": "Combustible y transporte público"},
+    {"name": "Restaurantes", "icon": "🍽️", "color": "#f97316", "description": "Comidas y cenas fuera de casa"},
+    {"name": "Salud", "icon": "💊", "color": "#ef4444", "description": "Farmacia, médicos y bienestar"},
+    {"name": "Educación", "icon": "📚", "color": "#8b5cf6", "description": "Formación y guardería"},
+    {"name": "Ocio", "icon": "🎬", "color": "#ec4899", "description": "Entretenimiento y tiempo libre"},
+    {"name": "Suscripciones", "icon": "📺", "color": "#7c3aed", "description": "Servicios digitales recurrentes"},
+    {"name": "Bebé", "icon": "👶", "color": "#f472b6", "description": "Ropa, alimentación y cuidados del bebé"},
+    {"name": "Otros", "icon": "📦", "color": "#64748b", "description": "Movimientos extraordinarios o sin categoría específica"}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "plans": [
+    {"name": "Salario Juan", "amount": "2400.00", "user": "demo@controlants.local", "category": "Otros", "due_day": 1},
+    {"name": "Salario Blanca", "amount": "1700.00", "user": "blanca.demo@controlants.local", "category": "Otros", "due_day": 1}
+  ],
+  "extras": [
+    {"month_offset": -2, "description": "Devolución de la renta", "amount": "240.00", "user": "demo@controlants.local", "category": "Otros", "day": 18},
+    {"month_offset": -1, "description": "Bonus trimestral", "amount": "450.00", "user": "demo@controlants.local", "category": "Otros", "day": 18},
+    {"month_offset": 0, "description": "Venta puntual", "amount": "180.00", "user": "demo@controlants.local", "category": "Otros", "day": 18}
+  ]
+}

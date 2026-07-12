@@ -1,0 +1,11 @@
+{
+  "monthly": [
+    {"category": "Supermercado", "amount": "500.00"},
+    {"category": "Transporte", "amount": "160.00"},
+    {"category": "Restaurantes", "amount": "120.00"},
+    {"category": "Ocio", "amount": "100.00"},
+    {"category": "Otros", "amount": "80.00"},
+    {"category": "Bebé", "amount": "180.00"}
+  ],
+  "future": {"name": "Ropa futura", "category": "Otros", "amount": "80.00"}
+}

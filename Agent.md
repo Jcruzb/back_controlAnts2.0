@@ -45,6 +45,7 @@ Main endpoints:
 - `GET/POST/PUT/PATCH/DELETE /api/categories/`
 - `GET/POST/PUT/PATCH/DELETE /api/recurring-payments/`
 - `GET /api/recurring-payments/{id}/payments/`
+- `GET/PATCH /api/recurring-payments/{id}/month-status/?year=YYYY&month=MM`
 - `GET /api/family/members/`
 - `GET/POST/PUT/PATCH/DELETE /api/planned-expenses/`
 - `GET/POST/PUT/PATCH/DELETE /api/planned-expense-plans/`
@@ -54,6 +55,8 @@ Main endpoints:
 - `POST /api/auth/login/`
 - `POST /api/auth/logout/`
 - `GET /api/auth/me/`
+- `PATCH /api/auth/me/`
+- `POST /api/auth/change-password/`
 - `GET /api/csrf/`
 
 Custom actions:
@@ -158,7 +161,47 @@ Frontend-specific notes live in [PAYER_FRONT.md](/Users/juancruzballadares/Deskt
 `GET /api/recurring-payments/{id}/payments/` returns the recurring payment itself plus a `payments` array with all associated `Expense` rows linked by `Expense.recurring_payment`.
 This is the intended backend contract for the frontend "detalle rapido del gasto" use case and avoids client-side joins across separate endpoints.
 
+### Recurring payment monthly status contract
+
+`RecurringPaymentOccurrence` stores whether one recurring obligation has been
+explicitly completed for a specific family month. Real money movements remain
+represented by `Expense` rows linked through `Expense.recurring_payment`.
+
+- `GET /api/recurring-payments/{id}/month-status/?year=YYYY&month=MM` returns
+  `planned_amount`, `paid_amount`, `pending_amount`, signed `difference_amount`,
+  `is_completed` and `payment_status`.
+- `PATCH` on the same endpoint accepts `{"is_completed": true|false}`.
+- Possible payment states are `pending`, `partially_paid`, `covered`,
+  `exceeded` and `completed`.
+- Completing an occurrence forces its pending amount to zero but does not
+  create or alter an `Expense`.
+- Completed occurrences reject movement changes and are skipped by recurring
+  expense generation until reopened.
+- Closed months reject status changes.
+- Budget recurring rows expose the same canonical amounts and payment status,
+  plus top-level `recurring_pending_amount` and `total_pending_amount`.
+
 ### Seed commands
+
+Preferred complete demo scenario:
+
+- [core/management/commands/seed_demo.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/management/commands/seed_demo.py)
+- Run all: `./venv/bin/python manage.py seed_all`
+- Custom range: `./venv/bin/python manage.py seed_demo --months 6`
+- Safe cleanup: `./venv/bin/python manage.py seed_demo --reset`
+- Full documentation: [Seed.md](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/Seed.md)
+
+The command is idempotent, transactional, isolated in `Familia Demo ControlAnts`,
+and blocked when `DEBUG=False` unless `ALLOW_DEMO_SEEDS=true` is explicitly set.
+
+Demo login credentials are intentionally local and fixed:
+
+- `demo@controlants.local` / `ControlAntsDemo2026!`
+- `blanca.demo@controlants.local` / `ControlAntsDemo2026!`
+
+These credentials and all demo business values are loaded from JSON files under
+`core/seeds/demo/`. The historical `seed_users` command still loads its separate
+users and passwords from `core/seeds/users.json`.
 
 Available local seeds:
 
@@ -197,7 +240,7 @@ Recurring-payment seed rows may include optional `payer` as a username. The comm
 
 ## Audit Snapshot
 
-Audit refreshed on April 25, 2026 against the current workspace.
+Audit documentation reviewed on July 7, 2026 against the current workspace.
 
 ### 1. High: plaintext credentials are stored in the repository
 
@@ -242,12 +285,18 @@ Relevant code:
 
 ### 5. Medium: test coverage exists now, but it is still narrow
 
-The current tests cover multi-tenant boundaries, budget category payload shape, recurring payment detail retrieval, payer validation/defaulting/filtering, family-member listing, recurring generation payer inheritance, and forward income-plan adjustments.
-They do not yet cover closed-month enforcement across all endpoints, plan-version overlap behavior, seed commands, or auth session flow.
+The current tests cover multi-tenant boundaries, budget category payload shape,
+recurring payment detail and monthly status, payer validation/defaulting/filtering,
+family-member listing, recurring generation payer inheritance, forward income-plan
+adjustments, auth profile/password operations, and the isolated demo seed's
+idempotency, reset isolation and production guard.
+They do not yet cover closed-month enforcement across every endpoint or all
+plan-version overlap behavior.
 
 Relevant file:
 
 - [core/tests.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/tests.py)
+- [core/test_seed_demo.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/test_seed_demo.py)
 
 ### 6. Low: there is dead duplicate budget view code under serializers
 
@@ -258,7 +307,8 @@ Routing uses [core/views/budget_view.py](/Users/juancruzballadares/Desktop/Proye
 
 - Use the project virtualenv when running management commands:
   - `./venv/bin/python manage.py ...`
-- `README.md` is still minimal, so this file and the code are the main source of truth.
+- `README.md` provides setup and local demo guidance; this file documents the
+  sensitive functional contracts and known risks in greater depth.
 - Session/CORS settings are environment-driven and safer than before, but there is still no dedicated `dev` vs `prod` settings split.
 - Local verification in this workspace is easiest through the project virtualenv and lightweight checks such as `py_compile` when DB access is not available.
 
@@ -268,5 +318,5 @@ Routing uses [core/views/budget_view.py](/Users/juancruzballadares/Desktop/Proye
 2. Decide how planned-plan spend should be linked so `budget.total_spent` cannot double-count category-based plan spend.
 3. Unify remaining planned-expense version history rules with the income-plan adjustment behavior, including explicit closure of previous ranges.
 4. Enforce `Profile.role` with permissions for admin-only mutations.
-5. Expand tests around closed months, version history, auth/session behavior, and seed commands.
+5. Expand tests around closed months and remaining version-history edge cases.
 6. Remove dead code such as the duplicate budget view under serializers and keep docs aligned with the routed implementation.

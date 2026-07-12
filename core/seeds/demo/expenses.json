@@ -1,0 +1,20 @@
+{
+  "historical_factor": {"base": "0.75", "step": "0.08"},
+  "variable": [
+    {"category": "Supermercado", "description": "Mercadona", "day": 6, "amount": "185.40"},
+    {"category": "Supermercado", "description": "Carrefour", "day": 18, "amount": "214.60"},
+    {"category": "Transporte", "description": "Repostaje Repsol", "day": 9, "amount": "80.00"},
+    {"category": "Transporte", "description": "Abono transporte", "day": 2, "amount": "80.00"},
+    {"category": "Restaurantes", "description": "Cena familiar", "day": 14, "amount": "145.00"},
+    {"category": "Salud", "description": "Farmacia", "day": 11, "amount": "32.50"},
+    {"category": "Bebé", "description": "Pañales y productos bebé", "day": 16, "amount": "125.00"},
+    {"category": "Ocio", "description": "Entradas de cine", "day": 22, "amount": "58.00"},
+    {"category": "Otros", "description": "Reparación inesperada", "day": 25, "amount": "67.00"}
+  ],
+  "recurring": [
+    {"name": "Alquiler", "payments": [{"day": 5, "amount": "700.00"}, {"day": 20, "amount": "350.00"}], "complete_historical": true},
+    {"name": "Electricidad", "payments": [{"day": 10, "amount": "75.00"}], "complete_historical": true},
+    {"name": "Internet", "payments": [{"day": 12, "amount": "25.00"}], "complete_historical": false},
+    {"name": "Guardería", "payments": [{"day": 3, "amount": "330.00"}], "complete_historical": false}
+  ]
+}
