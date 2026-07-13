@@ -2,6 +2,7 @@ import calendar
 from datetime import date
 from django.utils import timezone
 from django.db import models
+from django.db import transaction
 
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -18,6 +19,7 @@ from core.services.recurring_payment_service import (
 class GenerateRecurringExpensesAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request):
         profile = get_object_or_404(Profile, user=request.user)
 
@@ -39,7 +41,7 @@ class GenerateRecurringExpensesAPIView(APIView):
         skipped = 0
         completed_skipped = 0
 
-        recurring_payments = RecurringPayment.objects.filter(
+        recurring_payments = RecurringPayment.objects.select_for_update().filter(
             family=profile.family,
             active=True,
             start_date__lte=today,

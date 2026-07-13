@@ -17,6 +17,7 @@ from core.models import (
     IncomePlanVersion,
     Month,
     PlannedExpense,
+    PlannedExpenseOccurrence,
     PlannedExpensePlan,
     PlannedExpenseVersion,
     RecurringPayment,
@@ -94,7 +95,6 @@ class MultiTenantSecurityTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("category", response.data)
-
     def test_expense_accepts_family_payer_and_defaults_to_request_user(self):
         family_member = User.objects.create_user(username="ana", password="secret123")
         family_member.profile.family = self.family_a
@@ -176,7 +176,7 @@ class MultiTenantSecurityTests(TestCase):
         response = self.client.get(f"/api/expenses/?payer={self.user_a.id}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([item["id"] for item in response.data], [first.id])
+        self.assertEqual([item["id"] for item in response.data["results"]], [first.id])
 
     def test_family_members_endpoint_returns_only_current_family_users(self):
         family_member = User.objects.create_user(
@@ -962,3 +962,256 @@ class RecurringPaymentMonthlyCompletionTests(TestCase):
                 month=self.month_june,
             ).is_completed
         )
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class PlannedPaymentMonthlyCompletionTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(username="planned-month-user", password="secret123")
+        self.family = self.user.profile.family
+        self.category = Category.objects.create(
+            family=self.family,
+            name="Bebé",
+            icon="baby",
+        )
+        self.month = Month.objects.create(family=self.family, year=2026, month=7)
+        self.plan = PlannedExpensePlan.objects.create(
+            family=self.family,
+            category=self.category,
+            name="Bebé",
+            plan_type="ONGOING",
+            start_month=self.month,
+            created_by=self.user,
+        )
+        self.version = PlannedExpenseVersion.objects.create(
+            plan=self.plan,
+            planned_amount=Decimal("40.00"),
+            valid_from=self.month,
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def _plan_status_url(self):
+        return (
+            f"/api/planned-expense-plans/{self.plan.id}/month-status/"
+            "?year=2026&month=7"
+        )
+
+    def _add_plan_payment(self, amount="36.00"):
+        return Expense.objects.create(
+            month=self.month,
+            user=self.user,
+            payer=self.user,
+            category=self.category,
+            planned_expense_plan=self.plan,
+            amount=Decimal(amount),
+            date=date(2026, 7, 10),
+            description="Factura bebé",
+        )
+
+    def test_plan_can_close_partial_payment_and_reopen_without_changing_planned_version(self):
+        self._add_plan_payment()
+
+        opened = self.client.get("/api/budget/?year=2026&month=7")
+        item = next(row for row in opened.data["planned"] if row.get("plan_id") == self.plan.id)
+        self.assertEqual(str(item["paid_amount"]), "36.00")
+        self.assertEqual(str(item["pending_amount"]), "4.00")
+        self.assertEqual(item["payment_status"], "partially_paid")
+
+        completed = self.client.patch(
+            self._plan_status_url(),
+            {"is_completed": True},
+            format="json",
+        )
+        self.assertEqual(completed.status_code, 200)
+        self.assertEqual(str(completed.data["pending_amount"]), "0.00")
+        self.assertEqual(str(completed.data["difference_amount"]), "4.00")
+        self.assertEqual(completed.data["payment_status"], "completed")
+
+        budget = self.client.get("/api/budget/?year=2026&month=7")
+        item = next(row for row in budget.data["planned"] if row.get("plan_id") == self.plan.id)
+        self.assertEqual(str(item["pending_amount"]), "0.00")
+        self.assertEqual(str(budget.data["total_pending_amount"]), "0.00")
+        self.version.refresh_from_db()
+        self.assertEqual(self.version.planned_amount, Decimal("40.00"))
+
+        reopened = self.client.patch(
+            self._plan_status_url(),
+            {"is_completed": False},
+            format="json",
+        )
+        self.assertEqual(reopened.status_code, 200)
+        self.assertEqual(str(reopened.data["pending_amount"]), "4.00")
+
+    def test_plan_can_close_without_payments_and_blocks_movements_until_reopened(self):
+        completed = self.client.patch(
+            self._plan_status_url(),
+            {"is_completed": True},
+            format="json",
+        )
+        self.assertEqual(completed.status_code, 200)
+        self.assertEqual(str(completed.data["paid_amount"]), "0.00")
+        self.assertEqual(str(completed.data["pending_amount"]), "0.00")
+
+        rejected = self.client.post(
+            "/api/expenses/",
+            {
+                "description": "Movimiento tardío",
+                "amount": "10.00",
+                "category": self.category.id,
+                "planned_expense_plan": self.plan.id,
+                "date": "2026-07-12",
+            },
+            format="json",
+        )
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn("planned_payment", rejected.data)
+
+    def test_legacy_planned_expense_exposes_the_same_month_status_contract(self):
+        legacy_category = Category.objects.create(
+            family=self.family,
+            name="Colegio",
+            icon="school",
+        )
+        legacy = PlannedExpense.objects.create(
+            family=self.family,
+            month=self.month,
+            category=legacy_category,
+            name="Colegio",
+            planned_amount=Decimal("80.00"),
+            created_by=self.user,
+        )
+        payment = Expense.objects.create(
+            month=self.month,
+            user=self.user,
+            category=legacy_category,
+            planned_expense=legacy,
+            amount=Decimal("75.00"),
+            date=date(2026, 7, 11),
+        )
+        url = f"/api/planned-expenses/{legacy.id}/month-status/?year=2026&month=7"
+
+        completed = self.client.patch(url, {"is_completed": True}, format="json")
+        self.assertEqual(completed.status_code, 200)
+        self.assertEqual(str(completed.data["difference_amount"]), "5.00")
+
+        expense_response = self.client.get(f"/api/expenses/{payment.id}/")
+        self.assertEqual(expense_response.status_code, 200)
+        self.assertTrue(expense_response.data["planned_payment_month"]["is_completed"])
+        self.assertIsNone(expense_response.data["recurring_payment_month"])
+
+    def test_closed_month_rejects_planned_payment_status_changes(self):
+        self.month.is_closed = True
+        self.month.save(update_fields=["is_closed"])
+
+        response = self.client.patch(
+            self._plan_status_url(),
+            {"is_completed": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(
+            PlannedExpenseOccurrence.objects.get(
+                planned_expense_plan=self.plan,
+                month=self.month,
+            ).is_completed
+        )
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class BudgetHardeningTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(username="hardening-admin", password="secret123")
+        self.family = self.user.profile.family
+        self.user.profile.role = "admin"
+        self.user.profile.save(update_fields=["role"])
+        self.category = Category.objects.create(
+            family=self.family, name="Planificada", icon="📋"
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_budget_uses_calendar_order_instead_of_month_primary_keys(self):
+        target = Month.objects.create(family=self.family, year=2026, month=4)
+        start = Month.objects.create(family=self.family, year=2026, month=1)
+        plan = PlannedExpensePlan.objects.create(
+            family=self.family, category=self.category, name="Plan cronológico",
+            plan_type="ONGOING", start_month=start, created_by=self.user,
+        )
+        PlannedExpenseVersion.objects.create(
+            plan=plan, planned_amount="100.00", valid_from=start
+        )
+
+        response = self.client.get("/api/budget/?year=2026&month=4")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["month_id"], target.id)
+        self.assertEqual([item["plan_id"] for item in response.data["planned"]], [plan.id])
+
+    def test_each_new_plan_counts_only_its_explicitly_linked_expenses(self):
+        month = Month.objects.create(family=self.family, year=2026, month=6)
+        plans = []
+        for name, amount in (("Plan A", "100.00"), ("Plan B", "200.00")):
+            plan = PlannedExpensePlan.objects.create(
+                family=self.family, category=self.category, name=name,
+                plan_type="ONGOING", start_month=month, created_by=self.user,
+            )
+            PlannedExpenseVersion.objects.create(
+                plan=plan, planned_amount=amount, valid_from=month
+            )
+            plans.append(plan)
+
+        for plan, amount in zip(plans, ("20.00", "30.00")):
+            Expense.objects.create(
+                month=month, user=self.user, payer=self.user, category=self.category,
+                planned_expense_plan=plan, amount=amount, date=date(2026, 6, 10),
+            )
+
+        response = self.client.get("/api/budget/?year=2026&month=6")
+
+        spent_by_plan = {
+            item["plan_id"]: str(item["spent_amount"])
+            for item in response.data["planned"]
+        }
+        self.assertEqual(spent_by_plan, {plans[0].id: "20.00", plans[1].id: "30.00"})
+        self.assertEqual(str(response.data["total_spent"]), "50.00")
+
+    def test_planned_expense_adjustment_closes_previous_version(self):
+        january = Month.objects.create(family=self.family, year=2026, month=1)
+        march = Month.objects.create(family=self.family, year=2026, month=3)
+        april = Month.objects.create(family=self.family, year=2026, month=4)
+        plan = PlannedExpensePlan.objects.create(
+            family=self.family, category=self.category, name="Plan versionado",
+            plan_type="ONGOING", start_month=january, created_by=self.user,
+        )
+        first = PlannedExpenseVersion.objects.create(
+            plan=plan, planned_amount="100.00", valid_from=january
+        )
+
+        response = self.client.patch(
+            f"/api/planned-expense-plans/{plan.id}/",
+            {"planned_amount": "150.00", "effective_month": april.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        first.refresh_from_db()
+        self.assertEqual(first.valid_to_id, march.id)
+        current = PlannedExpenseVersion.objects.get(plan=plan, valid_from=april)
+        self.assertEqual(current.planned_amount, Decimal("150.00"))
+
+    def test_member_can_read_configuration_but_cannot_modify_it(self):
+        self.user.profile.role = "member"
+        self.user.profile.save(update_fields=["role"])
+
+        self.assertEqual(self.client.get("/api/categories/").status_code, 200)
+        response = self.client.post(
+            "/api/categories/", {"name": "Bloqueada", "icon": "🔒"}, format="json"
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_budget_rejects_invalid_month_without_creating_it(self):
+        response = self.client.get("/api/budget/?year=2026&month=13")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Month.objects.filter(family=self.family, month=13).exists())

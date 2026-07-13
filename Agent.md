@@ -46,6 +46,8 @@ Main endpoints:
 - `GET/POST/PUT/PATCH/DELETE /api/recurring-payments/`
 - `GET /api/recurring-payments/{id}/payments/`
 - `GET/PATCH /api/recurring-payments/{id}/month-status/?year=YYYY&month=MM`
+- `GET/PATCH /api/planned-expenses/{id}/month-status/?year=YYYY&month=MM`
+- `GET/PATCH /api/planned-expense-plans/{id}/month-status/?year=YYYY&month=MM`
 - `GET /api/family/members/`
 - `GET/POST/PUT/PATCH/DELETE /api/planned-expenses/`
 - `GET/POST/PUT/PATCH/DELETE /api/planned-expense-plans/`
@@ -82,7 +84,9 @@ Most current views correctly scope reads and writes through `Profile`.
 
 - Session auth is the default DRF authentication class.
 - Registration creates a new user, a dedicated family, and promotes the creator to `profile.role = "admin"`.
-- `Profile.role` exists, but today it is descriptive rather than enforced.
+- `Profile.role` is enforced for configuration mutations. Members retain read
+  access and operational actions such as recording movements, confirming an
+  income, and completing/reopening a recurring month.
 
 ### Closed months
 
@@ -154,6 +158,18 @@ Current contract:
 - Generated recurring expenses inherit `RecurringPayment.payer`; if absent, they fall back to the authenticated user.
 - Expense and recurring-payment serializers return both `payer` and `payer_detail`.
 
+### Planned expense plan linkage
+
+Expenses may link to the legacy `planned_expense` or the newer
+`planned_expense_plan`, but never to more than one planned/recurring source.
+New-plan budget spend is aggregated only through `planned_expense_plan`, avoiding
+category-based double counting. Budget plan rows expose numeric `plan_id` while
+retaining the existing prefixed display `id`.
+
+Changing a planned plan amount requires `effective_month` (a family month id).
+The previous version is closed on the preceding month and future versions are
+preserved without overlap.
+
 Frontend-specific notes live in [PAYER_FRONT.md](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/PAYER_FRONT.md).
 
 ### Recurring payment detail contract
@@ -180,6 +196,22 @@ represented by `Expense` rows linked through `Expense.recurring_payment`.
 - Closed months reject status changes.
 - Budget recurring rows expose the same canonical amounts and payment status,
   plus top-level `recurring_pending_amount` and `total_pending_amount`.
+
+### Planned payment monthly status contract
+
+Legacy `PlannedExpense` rows and versioned `PlannedExpensePlan` rows use the
+same explicit monthly completion semantics as recurring payments.
+
+- Their dedicated `month-status` endpoints accept `PATCH {"is_completed": true|false}`.
+- Budget `planned` rows expose `paid_amount`, `pending_amount`,
+  `difference_amount`, `is_completed` and `payment_status`.
+- Completing a planned occurrence makes its monthly pending amount zero without
+  changing the planned definition, its version history, or any real `Expense`.
+- Completion is allowed with zero, partial, exact or excess payments.
+- Completed occurrences reject movement changes until reopened, and closed
+  family months reject completion changes.
+- `Expense` responses expose `planned_payment_month` when linked to either
+  planned-expense system.
 
 ### Seed commands
 
@@ -240,68 +272,28 @@ Recurring-payment seed rows may include optional `payer` as a username. The comm
 
 ## Audit Snapshot
 
-Audit documentation reviewed on July 7, 2026 against the current workspace.
+Audit remediated on July 12, 2026. The current implementation now has explicit
+plan linkage, chronological month queries, non-overlapping planned versions,
+admin-only configuration mutations, authentication throttling, pagination and
+database constraints for core numeric/range invariants. Historical local seed
+identities are fictitious.
 
-### 1. High: plaintext credentials are stored in the repository
-
-The repository currently contains credential material in tracked local files and seed data.
-That is an operational security problem even for development because it normalizes password reuse and makes accidental exposure much easier.
-
-Relevant files:
-
-- [core/seeds/users.json](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/seeds/users.json)
-- [.env](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/.env)
-
-### 2. High: budget totals can still double-count spend when `PlannedExpensePlan` is involved
-
-`get_planned_plans_summary()` measures spend by category for ongoing plans, but `Expense` has no foreign key to `PlannedExpensePlan`.
-Because of that, the same expense can appear inside a planned-plan summary and also remain inside `unplanned_total`, which inflates `total_spent`.
-
-Relevant code:
-
-- [core/services/budget_service.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/services/budget_service.py)
-
-### 3. High: planned-expense plan updates can create overlapping versions
-
-The income-plan `adjust` action now closes the previous `IncomePlanVersion` range before opening the new one.
-However, the planned-expense plan update flow can still auto-create a new version when `planned_amount` changes without closing the previous version range.
-That conflicts with the stricter overlap rules already enforced in explicit version CRUD and makes planned-expense version history ambiguous.
-
-Relevant code:
-
-- [core/views/planned_expense_plan_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/planned_expense_plan_viewset.py)
-- [core/views/plannedIncome_viewset.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/plannedIncome_viewset.py)
-
-### 4. Medium: `Profile.role` is not enforced anywhere
-
-The system models `admin` vs `member`, but no authorization layer uses that distinction.
-In practice, any authenticated family member can mutate categories, recurring payments, plans, and budget-affecting resources.
-
-Relevant code:
-
-- [core/models.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/models.py)
-- [core/views/auth_view.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/auth_view.py)
-- [core/urls.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/urls.py)
-
-### 5. Medium: test coverage exists now, but it is still narrow
+### Remaining test scope
 
 The current tests cover multi-tenant boundaries, budget category payload shape,
 recurring payment detail and monthly status, payer validation/defaulting/filtering,
 family-member listing, recurring generation payer inheritance, forward income-plan
 adjustments, auth profile/password operations, and the isolated demo seed's
 idempotency, reset isolation and production guard.
-They do not yet cover closed-month enforcement across every endpoint or all
-plan-version overlap behavior.
+Additional regression coverage verifies chronological month ordering, explicit
+plan spend allocation, planned version closure, role permissions and invalid
+budget months. Closed-month enforcement across every endpoint remains a useful
+future expansion.
 
 Relevant file:
 
 - [core/tests.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/tests.py)
 - [core/test_seed_demo.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/test_seed_demo.py)
-
-### 6. Low: there is dead duplicate budget view code under serializers
-
-[core/serializers/budget_serializer.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/serializers/budget_serializer.py) contains an unused `BudgetView`.
-Routing uses [core/views/budget_view.py](/Users/juancruzballadares/Desktop/Proyectos/back_ControlAnts2.0/core/views/budget_view.py), so the serializer file is misleading and should either be deleted or renamed.
 
 ## Operational Notes
 
@@ -314,9 +306,6 @@ Routing uses [core/views/budget_view.py](/Users/juancruzballadares/Desktop/Proye
 
 ## Recommended Next Steps
 
-1. Remove plaintext credentials from tracked files and rotate any reused passwords.
-2. Decide how planned-plan spend should be linked so `budget.total_spent` cannot double-count category-based plan spend.
-3. Unify remaining planned-expense version history rules with the income-plan adjustment behavior, including explicit closure of previous ranges.
-4. Enforce `Profile.role` with permissions for admin-only mutations.
-5. Expand tests around closed months and remaining version-history edge cases.
-6. Remove dead code such as the duplicate budget view under serializers and keep docs aligned with the routed implementation.
+1. Expand tests around closed months across every mutation endpoint.
+2. Consider a dedicated production settings module as deployment complexity grows.
+3. Add observability for throttled authentication attempts and permission denials.

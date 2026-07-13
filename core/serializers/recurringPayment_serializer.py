@@ -67,6 +67,7 @@ class RecurringPaymentPaymentsSerializer(RecurringPaymentSerializer):
                 "payer",
                 "payer__profile",
                 "planned_expense",
+                "planned_expense_plan",
                 "recurring_payment",
             ).order_by("-date", "-created_at")
         return ExpenseSerializer(payments, many=True, context=self.context).data

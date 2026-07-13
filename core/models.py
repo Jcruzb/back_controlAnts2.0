@@ -35,7 +35,11 @@ class Month(models.Model):
     is_closed = models.BooleanField(default=False)
 
     class Meta:
-        unique_together = ('family', 'year', 'month')
+        constraints = [
+            models.UniqueConstraint(fields=['family', 'year', 'month'], name='uniq_family_year_month'),
+            models.CheckConstraint(check=models.Q(month__gte=1, month__lte=12), name='month_between_1_and_12'),
+            models.CheckConstraint(check=models.Q(year__gte=1, year__lte=9999), name='year_between_1_and_9999'),
+        ]
 
     def __str__(self):
         return f"{self.family.name} - {self.month}/{self.year}"
@@ -62,6 +66,7 @@ class Income(models.Model):
 
     class Meta:
         constraints = [
+            models.CheckConstraint(check=models.Q(amount__gt=0), name='income_amount_positive'),
             models.UniqueConstraint(
                 fields=['month', 'income_plan'],
                 condition=models.Q(income_plan__isnull=False),
@@ -116,6 +121,14 @@ class IncomePlan(models.Model):
         label = self.name or self.category.name
         return f"{label} ({self.plan_type})"
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(due_day__isnull=True) | models.Q(due_day__gte=1, due_day__lte=31),
+                name='income_plan_due_day_valid',
+            )
+        ]
+
 
 class IncomePlanVersion(models.Model):
     plan = models.ForeignKey(
@@ -143,6 +156,9 @@ class IncomePlanVersion(models.Model):
 
     class Meta:
         ordering = ["valid_from"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(planned_amount__gt=0), name='income_version_amount_positive'),
+        ]
 
     def __str__(self):
         label = self.plan.name or self.plan.category.name
@@ -159,6 +175,11 @@ class Category(models.Model):
     def __str__(self):
         return self.name
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['family', 'name'], name='uniq_category_name_per_family'),
+        ]
+
 class PlannedExpense(models.Model):
     month = models.ForeignKey(Month, on_delete=models.CASCADE, related_name="planned_expenses")
     family = models.ForeignKey(Family, on_delete=models.CASCADE)
@@ -169,7 +190,10 @@ class PlannedExpense(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ("month", "category")
+        constraints = [
+            models.UniqueConstraint(fields=["month", "category"], name='uniq_planned_month_category'),
+            models.CheckConstraint(check=models.Q(planned_amount__gt=0), name='planned_expense_amount_positive'),
+        ]
 
     def __str__(self):
         return f"{self.month} - {self.category.name} ({self.planned_amount})"
@@ -195,6 +219,14 @@ class Expense(models.Model):
         related_name='expenses'
     )
 
+    planned_expense_plan = models.ForeignKey(
+        'PlannedExpensePlan',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='expenses',
+    )
+
     date = models.DateField()
     description = models.CharField(max_length=255, blank=True)
 
@@ -210,6 +242,11 @@ class Expense(models.Model):
 
     def __str__(self):
         return f"{self.amount} - {self.category}"
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(check=models.Q(amount__gt=0), name='expense_amount_positive'),
+        ]
     
 class RecurringPayment(models.Model):
     family = models.ForeignKey(Family, on_delete=models.CASCADE)
@@ -235,6 +272,12 @@ class RecurringPayment(models.Model):
 
     def __str__(self):
         return self.name
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(check=models.Q(amount__gt=0), name='recurring_amount_positive'),
+            models.CheckConstraint(check=models.Q(due_day__gte=1, due_day__lte=31), name='recurring_due_day_valid'),
+        ]
 
 
 class RecurringPaymentOccurrence(models.Model):
@@ -348,6 +391,69 @@ class PlannedExpenseVersion(models.Model):
 
     class Meta:
         ordering = ["valid_from"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(planned_amount__gt=0), name='planned_version_amount_positive'),
+        ]
 
     def __str__(self):
         return f"{self.plan} - {self.planned_amount}"
+
+
+class PlannedExpenseOccurrence(models.Model):
+    """Monthly completion state for either planned-expense system."""
+
+    planned_expense = models.ForeignKey(
+        PlannedExpense,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="occurrences",
+    )
+    planned_expense_plan = models.ForeignKey(
+        PlannedExpensePlan,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="occurrences",
+    )
+    month = models.ForeignKey(
+        Month,
+        on_delete=models.CASCADE,
+        related_name="planned_expense_occurrences",
+    )
+    is_completed = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(
+                        planned_expense__isnull=False,
+                        planned_expense_plan__isnull=True,
+                    )
+                    | models.Q(
+                        planned_expense__isnull=True,
+                        planned_expense_plan__isnull=False,
+                    )
+                ),
+                name="planned_occurrence_exactly_one_source",
+            ),
+            models.UniqueConstraint(
+                fields=["planned_expense", "month"],
+                condition=models.Q(planned_expense__isnull=False),
+                name="uniq_legacy_planned_occurrence_month",
+            ),
+            models.UniqueConstraint(
+                fields=["planned_expense_plan", "month"],
+                condition=models.Q(planned_expense_plan__isnull=False),
+                name="uniq_plan_occurrence_month",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["month", "planned_expense"], name="idx_legacy_plan_occ_month"),
+            models.Index(fields=["month", "planned_expense_plan"], name="idx_plan_occ_month"),
+        ]
+
+    def __str__(self):
+        source = self.planned_expense or self.planned_expense_plan
+        return f"{source} - {self.month}"

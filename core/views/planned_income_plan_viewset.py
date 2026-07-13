@@ -16,6 +16,7 @@ from rest_framework.viewsets import ModelViewSet
 from core.models import Income, IncomePlan, IncomePlanVersion, Month, Profile
 from core.serializers.category_serializer import CategorySerializer
 from core.serializers.planned_income_plan_serializer import IncomePlanSerializer
+from core.permissions import IsFamilyAdminOrReadOnly
 
 
 def _month_key(m: Month):
@@ -134,7 +135,8 @@ class IncomePlanViewSet(ModelViewSet):
     """CRUD for IncomePlan (salary/recurrent planned income definition)."""
 
     serializer_class = IncomePlanSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFamilyAdminOrReadOnly]
+    family_member_actions = ("confirm",)
 
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
@@ -261,6 +263,8 @@ class IncomePlanViewSet(ModelViewSet):
             raise ValidationError({'detail': 'year and month must be integers'})
         if month_int < 1 or month_int > 12:
             raise ValidationError({'month': 'month must be between 1 and 12'})
+        if year_int < 1 or year_int > 9999:
+            raise ValidationError({'year': 'year must be between 1 and 9999'})
         return year_int, month_int
 
     def _ensure_plan_applies(self, plan: IncomePlan, year: int, month: int):

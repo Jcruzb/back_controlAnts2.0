@@ -40,6 +40,11 @@ class PlannedExpensePlanSerializer(serializers.ModelSerializer):
         write_only=True,
         required=True,
     )
+    effective_month = serializers.PrimaryKeyRelatedField(
+        queryset=Month.objects.none(),
+        write_only=True,
+        required=False,
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -51,6 +56,9 @@ class PlannedExpensePlanSerializer(serializers.ModelSerializer):
                 family=profile.family
             )
             self.fields["end_month"].queryset = Month.objects.filter(
+                family=profile.family
+            )
+            self.fields["effective_month"].queryset = Month.objects.filter(
                 family=profile.family
             )
 
@@ -67,6 +75,7 @@ class PlannedExpensePlanSerializer(serializers.ModelSerializer):
             "start_month",
             "end_month",
             "planned_amount",
+            "effective_month",
             "versions",
             "created_by",
             "created_at",
@@ -116,7 +125,9 @@ class PlannedExpensePlanSerializer(serializers.ModelSerializer):
         if plan_type == "ONE_MONTH":
             attrs["end_month"] = start_month
 
-        if plan_type == "ONGOING" and end_month and end_month < start_month:
+        if plan_type == "ONGOING" and start_month and end_month and (
+            end_month.year, end_month.month
+        ) < (start_month.year, start_month.month):
             raise serializers.ValidationError(
                 "end_month must be greater than or equal to start_month"
             )
@@ -128,6 +139,7 @@ class PlannedExpensePlanSerializer(serializers.ModelSerializer):
         Create plan + initial version atomically.
         """
         planned_amount = validated_data.pop("planned_amount")
+        validated_data.pop("effective_month", None)
         start_month = validated_data.get("start_month")
 
         request = self.context.get("request")

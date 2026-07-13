@@ -10,6 +10,7 @@ from core.serializers.family_member_serializer import FamilyMemberSerializer
 class FamilyMemberListView(ListAPIView):
     serializer_class = FamilyMemberSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = None
 
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)

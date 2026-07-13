@@ -20,6 +20,7 @@ from core.models import Month
 from core.services.recurring_payment_service import (
     get_recurring_payment_month_state,
 )
+from core.permissions import IsFamilyAdminOrReadOnly
 
 
 class RecurringPaymentViewSet(ModelViewSet):
@@ -32,7 +33,9 @@ class RecurringPaymentViewSet(ModelViewSet):
     - DELETE = desactivación (soft delete)
     """
     serializer_class = RecurringPaymentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFamilyAdminOrReadOnly]
+    family_member_actions = ("month_status",)
+    pagination_class = None
 
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
@@ -116,6 +119,7 @@ class RecurringPaymentViewSet(ModelViewSet):
                 "payer",
                 "payer__profile",
                 "planned_expense",
+                "planned_expense_plan",
                 "recurring_payment",
             )
             .order_by("-date", "-created_at")

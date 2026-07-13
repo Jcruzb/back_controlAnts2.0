@@ -12,6 +12,11 @@ class IncomeViewSet(ModelViewSet):
     serializer_class = IncomeSerializer
     permission_classes = [IsAuthenticated]
 
+    def paginate_queryset(self, queryset):
+        if self.request.query_params.get('year') and self.request.query_params.get('month'):
+            return None
+        return super().paginate_queryset(queryset)
+
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
 

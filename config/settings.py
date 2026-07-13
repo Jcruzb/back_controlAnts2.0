@@ -124,6 +124,14 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_PAGINATION_CLASS': 'core.pagination.ControlAntsPagination',
+    'PAGE_SIZE': 100,
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.ScopedRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'auth': os.getenv('AUTH_THROTTLE_RATE', '20/minute'),
+    },
 }
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
@@ -192,7 +200,7 @@ if env_bool("USE_X_FORWARDED_PROTO", False):
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = os.getenv('TIME_ZONE', 'UTC')
 
 USE_I18N = True
 

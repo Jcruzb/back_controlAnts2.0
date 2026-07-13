@@ -4,11 +4,13 @@ from django.shortcuts import get_object_or_404
 
 from core.models import Category, Profile
 from core.serializers.category_serializer import CategorySerializer
+from core.permissions import IsFamilyAdminOrReadOnly
 
 
 class CategoryViewSet(ModelViewSet):
     serializer_class = CategorySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFamilyAdminOrReadOnly]
+    pagination_class = None
 
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)

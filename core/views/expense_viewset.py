@@ -8,11 +8,19 @@ from core.serializers.expense_serializer import ExpenseSerializer
 from core.services.recurring_payment_service import (
     get_or_create_recurring_payment_occurrence,
 )
+from core.services.planned_payment_service import (
+    get_or_create_planned_expense_occurrence,
+)
 
 
 class ExpenseViewSet(ModelViewSet):
     serializer_class = ExpenseSerializer
     permission_classes = [IsAuthenticated]
+
+    def paginate_queryset(self, queryset):
+        if self.request.query_params.get('year') and self.request.query_params.get('month'):
+            return None
+        return super().paginate_queryset(queryset)
 
     def _ensure_recurring_occurrence_is_open(self, *, recurring_payment, month):
         if recurring_payment is None:
@@ -32,6 +40,27 @@ class ExpenseViewSet(ModelViewSet):
                 }
             )
 
+    def _ensure_planned_occurrence_is_open(
+        self, *, planned_expense, planned_expense_plan, month
+    ):
+        if planned_expense is None and planned_expense_plan is None:
+            return
+
+        occurrence = get_or_create_planned_expense_occurrence(
+            planned_expense=planned_expense,
+            planned_expense_plan=planned_expense_plan,
+            month=month,
+        )
+        if occurrence.is_completed:
+            raise ValidationError(
+                {
+                    "planned_payment": (
+                        "This planned payment is completed for the selected month. "
+                        "Reopen it before changing its movements."
+                    )
+                }
+            )
+
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
 
@@ -44,8 +73,9 @@ class ExpenseViewSet(ModelViewSet):
             'payer',
             'payer__profile',
             'planned_expense',
+            'planned_expense_plan',
             'recurring_payment',
-        )
+        ).order_by('-date', '-created_at', '-id')
 
         year = self.request.query_params.get('year')
         month = self.request.query_params.get('month')
@@ -98,6 +128,11 @@ class ExpenseViewSet(ModelViewSet):
             recurring_payment=serializer.validated_data.get('recurring_payment'),
             month=month_obj,
         )
+        self._ensure_planned_occurrence_is_open(
+            planned_expense=serializer.validated_data.get("planned_expense"),
+            planned_expense_plan=serializer.validated_data.get("planned_expense_plan"),
+            month=month_obj,
+        )
 
         save_kwargs = {
             'user': self.request.user,
@@ -117,6 +152,11 @@ class ExpenseViewSet(ModelViewSet):
 
         self._ensure_recurring_occurrence_is_open(
             recurring_payment=instance.recurring_payment,
+            month=instance.month,
+        )
+        self._ensure_planned_occurrence_is_open(
+            planned_expense=instance.planned_expense,
+            planned_expense_plan=instance.planned_expense_plan,
             month=instance.month,
         )
 
@@ -146,6 +186,15 @@ class ExpenseViewSet(ModelViewSet):
                 ),
                 month=month_obj,
             )
+            self._ensure_planned_occurrence_is_open(
+                planned_expense=serializer.validated_data.get(
+                    "planned_expense", instance.planned_expense
+                ),
+                planned_expense_plan=serializer.validated_data.get(
+                    "planned_expense_plan", instance.planned_expense_plan
+                ),
+                month=month_obj,
+            )
 
             serializer.save(month=month_obj)
             return
@@ -153,6 +202,15 @@ class ExpenseViewSet(ModelViewSet):
         self._ensure_recurring_occurrence_is_open(
             recurring_payment=serializer.validated_data.get(
                 'recurring_payment', instance.recurring_payment
+            ),
+            month=instance.month,
+        )
+        self._ensure_planned_occurrence_is_open(
+            planned_expense=serializer.validated_data.get(
+                "planned_expense", instance.planned_expense
+            ),
+            planned_expense_plan=serializer.validated_data.get(
+                "planned_expense_plan", instance.planned_expense_plan
             ),
             month=instance.month,
         )
@@ -166,6 +224,11 @@ class ExpenseViewSet(ModelViewSet):
 
         self._ensure_recurring_occurrence_is_open(
             recurring_payment=instance.recurring_payment,
+            month=instance.month,
+        )
+        self._ensure_planned_occurrence_is_open(
+            planned_expense=instance.planned_expense,
+            planned_expense_plan=instance.planned_expense_plan,
             month=instance.month,
         )
 

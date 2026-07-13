@@ -126,6 +126,10 @@ class BudgetView(APIView):
             month = int(month)
         except ValueError:
             raise ValidationError("year and month must be integers")
+        if not 1 <= year <= 9999:
+            raise ValidationError({"year": "year must be between 1 and 9999"})
+        if not 1 <= month <= 12:
+            raise ValidationError({"month": "month must be between 1 and 12"})
 
         service = BudgetService(
             family=request.user.profile.family,

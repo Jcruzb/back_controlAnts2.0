@@ -8,6 +8,7 @@ from core.models import (
     Month,
     Expense,
     PlannedExpense,
+    PlannedExpenseOccurrence,
     PlannedExpensePlan,
     PlannedExpenseVersion,
     RecurringPayment,
@@ -18,6 +19,18 @@ from core.services.budget_rules import WARNING_THRESHOLD, OVER_THRESHOLD
 from core.services.recurring_payment_service import (
     calculate_recurring_payment_amounts,
 )
+
+
+def _month_lte(prefix, year, month):
+    return Q(**{f"{prefix}__year__lt": year}) | (
+        Q(**{f"{prefix}__year": year}) & Q(**{f"{prefix}__month__lte": month})
+    )
+
+
+def _month_gte(prefix, year, month):
+    return Q(**{f"{prefix}__year__gt": year}) | (
+        Q(**{f"{prefix}__year": year}) & Q(**{f"{prefix}__month__gte": month})
+    )
 
 
 class BudgetService:
@@ -179,26 +192,49 @@ class BudgetService:
         """
         month_obj = self.get_month()
 
-        plans = PlannedExpensePlan.objects.filter(
+        plans = list(PlannedExpensePlan.objects.filter(
             family=self.family,
             active=True,
             plan_type="ONGOING",
-            start_month__lte=month_obj,
         ).filter(
-            Q(end_month__isnull=True) | Q(end_month__gte=month_obj)
-        ).select_related("category")
+            _month_lte("start_month", self.year, self.month)
+        ).filter(
+            Q(end_month__isnull=True) | _month_gte("end_month", self.year, self.month)
+        ).select_related("category", "start_month", "end_month"))
 
-        category_ids = [plan.category_id for plan in plans]
-        category_totals = {
-            row["category"]: row["total"] or 0
+        existing_occurrences = {
+            occurrence.planned_expense_plan_id: occurrence
+            for occurrence in PlannedExpenseOccurrence.objects.filter(
+                planned_expense_plan__in=plans,
+                month=month_obj,
+            )
+        }
+        PlannedExpenseOccurrence.objects.bulk_create(
+            [
+                PlannedExpenseOccurrence(planned_expense_plan=plan, month=month_obj)
+                for plan in plans
+                if plan.id not in existing_occurrences
+            ],
+            ignore_conflicts=True,
+        )
+        existing_occurrences = {
+            occurrence.planned_expense_plan_id: occurrence
+            for occurrence in PlannedExpenseOccurrence.objects.filter(
+                planned_expense_plan__in=plans,
+                month=month_obj,
+            )
+        }
+
+        plan_totals = {
+            row["planned_expense_plan"]: row["total"] or 0
             for row in (
                 Expense.objects.filter(
                     month__family=self.family,
                     month__year=self.year,
                     month__month=self.month,
-                    category_id__in=category_ids,
+                    planned_expense_plan__in=plans,
                 )
-                .values("category")
+                .values("planned_expense_plan")
                 .annotate(total=Sum("amount"))
             )
         }
@@ -209,31 +245,44 @@ class BudgetService:
             version = (
                 PlannedExpenseVersion.objects.filter(
                     plan=plan,
-                    valid_from__lte=month_obj,
+                ).filter(
+                    _month_lte("valid_from", self.year, self.month)
+                ).filter(
+                    Q(valid_to__isnull=True) | _month_gte("valid_to", self.year, self.month)
                 )
-                .filter(
-                    Q(valid_to__isnull=True) | Q(valid_to__gte=month_obj)
-                )
-                .order_by("-valid_from")
+                .order_by("-valid_from__year", "-valid_from__month", "-created_at")
                 .first()
             )
 
             if not version:
                 continue
 
-            spent = category_totals.get(plan.category_id, 0)
+            spent = plan_totals.get(plan.id, 0)
+            occurrence = existing_occurrences[plan.id]
+            amounts = calculate_recurring_payment_amounts(
+                planned_amount=version.planned_amount,
+                paid_amount=spent,
+                is_completed=occurrence.is_completed,
+            )
 
-            status, ratio, remaining = self._calculate_status(
-                version.planned_amount,
-                spent,
+            status, ratio, _ = self._calculate_status(
+                amounts.planned_amount,
+                amounts.paid_amount,
             )
 
             result.append({
                 "id": f"plan-{plan.id}",
+                "plan_id": plan.id,
+                "occurrence_id": occurrence.id,
                 **self._serialize_category(plan.category),
-                "planned_amount": version.planned_amount,
-                "spent_amount": spent,
-                "remaining_amount": remaining,
+                "planned_amount": amounts.planned_amount,
+                "paid_amount": amounts.paid_amount,
+                "pending_amount": amounts.pending_amount,
+                "difference_amount": amounts.difference_amount,
+                "is_completed": amounts.is_completed,
+                "payment_status": amounts.payment_status,
+                "spent_amount": amounts.paid_amount,
+                "remaining_amount": amounts.pending_amount,
                 "percentage_used": round(ratio * 100, 2),
                 "status": status,
                 "source": "plan",
@@ -242,24 +291,64 @@ class BudgetService:
         return result
 
     def get_planned_expenses_summary(self):
+        month_obj = self.get_month()
         planned = PlannedExpense.objects.filter(
             family=self.family,
             month__year=self.year,
             month__month=self.month,
         ).select_related("category").annotate(spent_total=Sum("expenses__amount"))
 
+        planned = list(planned)
+        existing_occurrences = {
+            occurrence.planned_expense_id: occurrence
+            for occurrence in PlannedExpenseOccurrence.objects.filter(
+                planned_expense__in=planned,
+                month=month_obj,
+            )
+        }
+        PlannedExpenseOccurrence.objects.bulk_create(
+            [
+                PlannedExpenseOccurrence(planned_expense=item, month=month_obj)
+                for item in planned
+                if item.id not in existing_occurrences
+            ],
+            ignore_conflicts=True,
+        )
+        existing_occurrences = {
+            occurrence.planned_expense_id: occurrence
+            for occurrence in PlannedExpenseOccurrence.objects.filter(
+                planned_expense__in=planned,
+                month=month_obj,
+            )
+        }
+
         result = []
         for p in planned:
             spent = p.spent_total or 0
+            occurrence = existing_occurrences[p.id]
+            amounts = calculate_recurring_payment_amounts(
+                planned_amount=p.planned_amount,
+                paid_amount=spent,
+                is_completed=occurrence.is_completed,
+            )
 
-            status, ratio, remaining = self._calculate_status(p.planned_amount, spent)
+            status, ratio, _ = self._calculate_status(
+                amounts.planned_amount,
+                amounts.paid_amount,
+            )
 
             result.append({
                 "id": p.id,
+                "occurrence_id": occurrence.id,
                 **self._serialize_category(p.category),
-                "planned_amount": p.planned_amount,
-                "spent_amount": spent,
-                "remaining_amount": remaining,
+                "planned_amount": amounts.planned_amount,
+                "paid_amount": amounts.paid_amount,
+                "pending_amount": amounts.pending_amount,
+                "difference_amount": amounts.difference_amount,
+                "is_completed": amounts.is_completed,
+                "payment_status": amounts.payment_status,
+                "spent_amount": amounts.paid_amount,
+                "remaining_amount": amounts.pending_amount,
                 "percentage_used": round(ratio * 100, 2),
                 "status": status,
             })
@@ -273,6 +362,7 @@ class BudgetService:
                 month__year=self.year,
                 month__month=self.month,
                 planned_expense__isnull=True,
+                planned_expense_plan__isnull=True,
                 recurring_payment__isnull=True,
             ).aggregate(total=Sum("amount"))["total"]
             or 0
@@ -298,7 +388,7 @@ class BudgetService:
         status, ratio, remaining = self._calculate_status(total_planned, total_spent)
         recurring_pending_amount = sum(r["pending_amount"] for r in recurring)
         planned_pending_amount = sum(
-            max(p["remaining_amount"], 0) for p in planned
+            p["pending_amount"] for p in planned
         )
 
         return {

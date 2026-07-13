@@ -147,7 +147,7 @@ si no hubo otros cambios posteriores que deban conservarse. Los `AGENTS.md` y
 ## Limitaciones observadas
 
 - La búsqueda estructural encontró tanto el `BudgetView` real como un duplicado
-  muerto bajo `core/serializers/budget_serializer.py`; hay que verificar rutas.
+  histórico bajo `core/serializers/budget_serializer.py` ya fue eliminado; hay que verificar rutas.
 - La inteligencia cruzada no creó enlaces `CROSS_HTTP_CALLS` entre Axios y las
   rutas DRF. Los consumidores `/budget/` se confirmaron mediante `search_code` y
   lectura directa en `Budget.jsx` y `Dashboard.jsx`.

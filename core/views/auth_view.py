@@ -48,6 +48,7 @@ def _auth_payload(user: User):
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
+    throttle_scope = "auth"
 
     @transaction.atomic
     def post(self, request):
@@ -79,6 +80,7 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    throttle_scope = "auth"
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)

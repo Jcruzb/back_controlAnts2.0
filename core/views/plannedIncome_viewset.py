@@ -7,6 +7,7 @@ from typing import Optional
 
 from core.models import IncomePlanVersion, Month, Profile
 from core.serializers.planned_income_serializer import IncomePlanVersionSerializer
+from core.permissions import IsFamilyAdminOrReadOnly
 
 
 def _month_key(m: Month):
@@ -41,7 +42,7 @@ class IncomePlanVersionViewSet(ModelViewSet):
     """CRUD for IncomePlanVersion (planned amount versions per month range)."""
 
     serializer_class = IncomePlanVersionSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsFamilyAdminOrReadOnly]
 
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
