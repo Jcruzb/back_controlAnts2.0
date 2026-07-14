@@ -52,12 +52,16 @@ class BudgetService:
 
     def _calculate_status(self, planned, spent):
         if planned == 0:
+            if spent > 0:
+                return "over", 1, planned - spent
             return "ok", 0, planned
 
         ratio = spent / planned
 
-        if ratio >= OVER_THRESHOLD:
+        if ratio > OVER_THRESHOLD:
             return "over", ratio, planned - spent
+        if ratio == OVER_THRESHOLD:
+            return "ok", ratio, planned - spent
         if ratio >= WARNING_THRESHOLD:
             return "warning", ratio, planned - spent
 
@@ -406,4 +410,5 @@ class BudgetService:
             "unplanned_total": unplanned_total,
             "total_planned": total_planned,
             "total_spent": total_spent,
+            "actual_spent": total_spent,
         }

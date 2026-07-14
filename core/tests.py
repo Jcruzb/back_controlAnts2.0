@@ -1176,6 +1176,69 @@ class BudgetHardeningTests(TestCase):
         self.assertEqual(spent_by_plan, {plans[0].id: "20.00", plans[1].id: "30.00"})
         self.assertEqual(str(response.data["total_spent"]), "50.00")
 
+    def test_budget_actual_spent_and_status_distinguish_covered_from_exceeded(self):
+        month = Month.objects.create(family=self.family, year=2026, month=7)
+        recurring = RecurringPayment.objects.create(
+            family=self.family,
+            category=self.category,
+            name="Seguro",
+            amount="40.00",
+            due_day=5,
+            start_date=date(2026, 1, 1),
+        )
+        Expense.objects.create(
+            month=month,
+            user=self.user,
+            payer=self.user,
+            category=self.category,
+            recurring_payment=recurring,
+            amount="40.00",
+            date=date(2026, 7, 5),
+        )
+
+        covered = self.client.get("/api/budget/?year=2026&month=7")
+
+        self.assertEqual(covered.status_code, 200)
+        self.assertEqual(covered.data["status"], "ok")
+        self.assertEqual(str(covered.data["actual_spent"]), "40.00")
+        self.assertEqual(str(covered.data["total_spent"]), "40.00")
+        self.assertEqual(str(covered.data["remaining_amount"]), "0.00")
+
+        Expense.objects.create(
+            month=month,
+            user=self.user,
+            payer=self.user,
+            category=self.category,
+            amount="10.00",
+            date=date(2026, 7, 8),
+            description="Compra no planificada",
+        )
+
+        exceeded = self.client.get("/api/budget/?year=2026&month=7")
+
+        self.assertEqual(exceeded.data["status"], "over")
+        self.assertEqual(str(exceeded.data["actual_spent"]), "50.00")
+        self.assertEqual(str(exceeded.data["unplanned_total"]), "10.00")
+        self.assertEqual(str(exceeded.data["remaining_amount"]), "-10.00")
+
+    def test_budget_without_planning_marks_real_spending_as_exceeded(self):
+        month = Month.objects.create(family=self.family, year=2026, month=8)
+        Expense.objects.create(
+            month=month,
+            user=self.user,
+            payer=self.user,
+            category=self.category,
+            amount="25.00",
+            date=date(2026, 8, 3),
+        )
+
+        response = self.client.get("/api/budget/?year=2026&month=8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "over")
+        self.assertEqual(str(response.data["actual_spent"]), "25.00")
+        self.assertEqual(str(response.data["remaining_amount"]), "-25.00")
+
     def test_planned_expense_adjustment_closes_previous_version(self):
         january = Month.objects.create(family=self.family, year=2026, month=1)
         march = Month.objects.create(family=self.family, year=2026, month=3)

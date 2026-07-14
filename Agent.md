@@ -127,10 +127,24 @@ Current behavior:
 `GET /api/budget/` returns:
 
 - month metadata (`month_id`, `year`, `month`)
-- top-level totals (`total_planned`, `total_spent`, `unplanned_total`, `remaining_amount`, `percentage_used`, `status`)
+- top-level totals (`total_planned`, `total_spent`, `actual_spent`, `unplanned_total`, `remaining_amount`, `percentage_used`, `status`)
 - `recurring`
 - `planned`
 - `income_plan_month`
+
+Top-level budget semantics:
+
+- `total_planned`: all recurring and planned obligations for the selected month.
+- `total_spent`: all real expense movements registered in the month, whether
+  planned, recurring or unplanned.
+- `actual_spent`: explicit, backwards-compatible alias of `total_spent` for UI
+  labels such as "Gasto real".
+- `unplanned_total`: subset of real spending that has no planned or recurring
+  linkage; it must not be added to `total_spent` again.
+- `remaining_amount` / `difference_amount`: signed budget variance,
+  `total_planned - total_spent`.
+- `status`: `over` only when real spending is strictly greater than the budget;
+  exact coverage is `ok`, and spending without any configured budget is `over`.
 
 `planned` and `recurring` now expose consistent category fields:
 
