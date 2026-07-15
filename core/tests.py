@@ -1148,6 +1148,225 @@ class BudgetHardeningTests(TestCase):
         self.assertEqual(response.data["month_id"], target.id)
         self.assertEqual([item["plan_id"] for item in response.data["planned"]], [plan.id])
 
+    def test_budget_includes_one_month_plan_once_only_in_its_target_month(self):
+        august = Month.objects.create(family=self.family, year=2026, month=8)
+        september = Month.objects.create(family=self.family, year=2026, month=9)
+        october = Month.objects.create(family=self.family, year=2026, month=10)
+        plan = PlannedExpensePlan.objects.create(
+            family=self.family,
+            category=self.category,
+            name="Plan puntual de septiembre",
+            plan_type="ONE_MONTH",
+            start_month=september,
+            end_month=september,
+            created_by=self.user,
+        )
+        PlannedExpenseVersion.objects.create(
+            plan=plan,
+            planned_amount="100.00",
+            valid_from=september,
+            valid_to=september,
+        )
+        Expense.objects.create(
+            month=september,
+            user=self.user,
+            payer=self.user,
+            category=self.category,
+            planned_expense_plan=plan,
+            amount="40.00",
+            date=date(2026, 9, 10),
+        )
+
+        september_response = self.client.get("/api/budget/?year=2026&month=9")
+        august_response = self.client.get("/api/budget/?year=2026&month=8")
+        october_response = self.client.get("/api/budget/?year=2026&month=10")
+
+        self.assertEqual(september_response.status_code, 200)
+        matching_items = [
+            item
+            for item in september_response.data["planned"]
+            if item.get("plan_id") == plan.id
+        ]
+        self.assertEqual(len(matching_items), 1)
+        self.assertEqual(str(matching_items[0]["planned_amount"]), "100.00")
+        self.assertEqual(str(matching_items[0]["paid_amount"]), "40.00")
+        self.assertEqual(str(matching_items[0]["pending_amount"]), "60.00")
+        self.assertEqual(str(september_response.data["total_planned"]), "100.00")
+        self.assertEqual(str(september_response.data["total_spent"]), "40.00")
+        self.assertFalse(
+            any(item.get("plan_id") == plan.id for item in august_response.data["planned"])
+        )
+        self.assertFalse(
+            any(item.get("plan_id") == plan.id for item in october_response.data["planned"])
+        )
+        self.assertEqual(august_response.data["month_id"], august.id)
+        self.assertEqual(october_response.data["month_id"], october.id)
+
+    def test_one_month_plans_calculate_unpaid_and_fully_paid_amounts(self):
+        september = Month.objects.create(family=self.family, year=2026, month=9)
+        unpaid_plan = PlannedExpensePlan.objects.create(
+            family=self.family,
+            category=self.category,
+            name="Sin movimientos",
+            plan_type="ONE_MONTH",
+            start_month=september,
+            end_month=september,
+            created_by=self.user,
+        )
+        paid_plan = PlannedExpensePlan.objects.create(
+            family=self.family,
+            category=self.category,
+            name="Pagado por completo",
+            plan_type="ONE_MONTH",
+            start_month=september,
+            end_month=september,
+            created_by=self.user,
+        )
+        for plan, amount in ((unpaid_plan, "100.00"), (paid_plan, "80.00")):
+            PlannedExpenseVersion.objects.create(
+                plan=plan,
+                planned_amount=amount,
+                valid_from=september,
+                valid_to=september,
+            )
+        Expense.objects.create(
+            month=september,
+            user=self.user,
+            payer=self.user,
+            category=self.category,
+            planned_expense_plan=paid_plan,
+            amount="80.00",
+            date=date(2026, 9, 15),
+        )
+
+        response = self.client.get("/api/budget/?year=2026&month=9")
+
+        by_plan = {item["plan_id"]: item for item in response.data["planned"]}
+        self.assertEqual(str(by_plan[unpaid_plan.id]["paid_amount"]), "0.00")
+        self.assertEqual(str(by_plan[unpaid_plan.id]["pending_amount"]), "100.00")
+        self.assertEqual(by_plan[unpaid_plan.id]["payment_status"], "pending")
+        self.assertEqual(str(by_plan[paid_plan.id]["paid_amount"]), "80.00")
+        self.assertEqual(str(by_plan[paid_plan.id]["pending_amount"]), "0.00")
+        self.assertEqual(by_plan[paid_plan.id]["payment_status"], "covered")
+        self.assertEqual(str(response.data["total_planned"]), "180.00")
+        self.assertEqual(str(response.data["total_spent"]), "80.00")
+        self.assertEqual(str(response.data["total_pending_amount"]), "100.00")
+
+    def test_migrated_one_month_plan_does_not_duplicate_legacy_budget_or_occurrence(self):
+        september = Month.objects.create(family=self.family, year=2026, month=9)
+        legacy = PlannedExpense.objects.create(
+            family=self.family,
+            month=september,
+            category=self.category,
+            name="Plan migrado",
+            planned_amount="100.00",
+            created_by=self.user,
+        )
+        migrated_plan = PlannedExpensePlan.objects.create(
+            family=self.family,
+            category=self.category,
+            name="Plan migrado",
+            plan_type="ONE_MONTH",
+            start_month=september,
+            end_month=september,
+            created_by=self.user,
+        )
+        PlannedExpenseVersion.objects.create(
+            plan=migrated_plan,
+            planned_amount="100.00",
+            valid_from=september,
+            valid_to=september,
+        )
+
+        first = self.client.get("/api/budget/?year=2026&month=9")
+        second = self.client.get("/api/budget/?year=2026&month=9")
+
+        self.assertEqual(str(first.data["total_planned"]), "100.00")
+        self.assertEqual(len(first.data["planned"]), 1)
+        self.assertEqual(first.data["planned"][0]["id"], legacy.id)
+        self.assertEqual(str(second.data["total_planned"]), "100.00")
+        self.assertEqual(
+            PlannedExpenseOccurrence.objects.filter(
+                planned_expense=legacy,
+                month=september,
+            ).count(),
+            1,
+        )
+        self.assertFalse(
+            PlannedExpenseOccurrence.objects.filter(
+                planned_expense_plan=migrated_plan,
+                month=september,
+            ).exists()
+        )
+
+    def test_one_month_plan_is_isolated_by_family(self):
+        september = Month.objects.create(family=self.family, year=2026, month=9)
+        other_user = User.objects.create_user(username="other-family", password="secret123")
+        other_family = other_user.profile.family
+        other_category = Category.objects.create(
+            family=other_family,
+            name="Ajena",
+            icon="🔒",
+        )
+        other_month = Month.objects.create(family=other_family, year=2026, month=9)
+        other_plan = PlannedExpensePlan.objects.create(
+            family=other_family,
+            category=other_category,
+            name="Plan ajeno",
+            plan_type="ONE_MONTH",
+            start_month=other_month,
+            end_month=other_month,
+            created_by=other_user,
+        )
+        PlannedExpenseVersion.objects.create(
+            plan=other_plan,
+            planned_amount="999.00",
+            valid_from=other_month,
+            valid_to=other_month,
+        )
+
+        response = self.client.get("/api/budget/?year=2026&month=9")
+
+        self.assertEqual(response.data["month_id"], september.id)
+        self.assertEqual(str(response.data["total_planned"]), "0")
+        self.assertFalse(
+            any(item.get("plan_id") == other_plan.id for item in response.data["planned"])
+        )
+
+    @override_settings(TIME_ZONE="Pacific/Kiritimati")
+    def test_one_month_plan_uses_target_month_not_creation_time_or_timezone(self):
+        september = Month.objects.create(family=self.family, year=2026, month=9)
+        plans = []
+        for name, amount, created_at in (
+            ("Creado antes", "25.00", timezone.make_aware(timezone.datetime(2026, 8, 15, 12))),
+            ("Creado durante", "35.00", timezone.make_aware(timezone.datetime(2026, 9, 20, 12))),
+        ):
+            plan = PlannedExpensePlan.objects.create(
+                family=self.family,
+                category=self.category,
+                name=name,
+                plan_type="ONE_MONTH",
+                start_month=september,
+                end_month=september,
+                created_by=self.user,
+            )
+            PlannedExpensePlan.objects.filter(pk=plan.pk).update(created_at=created_at)
+            PlannedExpenseVersion.objects.create(
+                plan=plan,
+                planned_amount=amount,
+                valid_from=september,
+                valid_to=september,
+            )
+            plans.append(plan)
+
+        response = self.client.get("/api/budget/?year=2026&month=9")
+
+        self.assertEqual(
+            {item["plan_id"] for item in response.data["planned"]},
+            {plan.id for plan in plans},
+        )
+        self.assertEqual(str(response.data["total_planned"]), "60.00")
+
     def test_each_new_plan_counts_only_its_explicitly_linked_expenses(self):
         month = Month.objects.create(family=self.family, year=2026, month=6)
         plans = []
@@ -1220,6 +1439,80 @@ class BudgetHardeningTests(TestCase):
         self.assertEqual(str(exceeded.data["actual_spent"]), "50.00")
         self.assertEqual(str(exceeded.data["unplanned_total"]), "10.00")
         self.assertEqual(str(exceeded.data["remaining_amount"]), "-10.00")
+
+    def test_budget_exposes_compatible_budget_pending_and_cash_metrics(self):
+        month = Month.objects.create(family=self.family, year=2026, month=9)
+        recurring = RecurringPayment.objects.create(
+            family=self.family,
+            category=self.category,
+            name="Fijo",
+            amount="100.00",
+            due_day=5,
+            start_date=date(2026, 1, 1),
+        )
+        plan = PlannedExpensePlan.objects.create(
+            family=self.family,
+            category=self.category,
+            name="Plan mensual",
+            plan_type="ONGOING",
+            start_month=month,
+            created_by=self.user,
+        )
+        PlannedExpenseVersion.objects.create(
+            plan=plan,
+            planned_amount="200.00",
+            valid_from=month,
+        )
+        Income.objects.create(
+            month=month,
+            user=self.user,
+            amount="1000.00",
+            category=self.category,
+            date=date(2026, 9, 1),
+        )
+        Expense.objects.create(
+            month=month,
+            user=self.user,
+            payer=self.user,
+            category=self.category,
+            recurring_payment=recurring,
+            amount="60.00",
+            date=date(2026, 9, 5),
+        )
+        Expense.objects.create(
+            month=month,
+            user=self.user,
+            payer=self.user,
+            category=self.category,
+            planned_expense_plan=plan,
+            amount="50.00",
+            date=date(2026, 9, 10),
+        )
+        Expense.objects.create(
+            month=month,
+            user=self.user,
+            payer=self.user,
+            category=self.category,
+            amount="30.00",
+            date=date(2026, 9, 12),
+        )
+
+        response = self.client.get("/api/budget/?year=2026&month=9")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(str(response.data["total_planned"]), "300.00")
+        self.assertEqual(str(response.data["planned_paid_amount"]), "110.00")
+        self.assertEqual(str(response.data["planned_pending_amount"]), "190.00")
+        self.assertEqual(str(response.data["total_pending_amount"]), "190.00")
+        self.assertEqual(str(response.data["unplanned_total"]), "30.00")
+        self.assertEqual(str(response.data["actual_spent"]), "140.00")
+        self.assertEqual(str(response.data["total_spent"]), "140.00")
+        self.assertEqual(str(response.data["budget_variance"]), "160.00")
+        self.assertEqual(str(response.data["remaining_amount"]), "160.00")
+        self.assertEqual(str(response.data["difference_amount"]), "160.00")
+        self.assertEqual(str(response.data["actual_income"]), "1000.00")
+        self.assertEqual(str(response.data["cash_balance"]), "860.00")
+        self.assertEqual(str(response.data["percentage_used"]), "46.67")
 
     def test_budget_without_planning_marks_real_spending_as_exceeded(self):
         month = Month.objects.create(family=self.family, year=2026, month=8)

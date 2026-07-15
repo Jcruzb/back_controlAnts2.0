@@ -1,5 +1,7 @@
 # Registro de necesidades no cubiertas
 
+> La fase 2 implementa únicamente el clasificador y logging minimizado sin tabla. La persistencia, retención agregada y panel descritos aquí permanecen como propuesta futura.
+
 ## Objetivo y límite
 
 Registrar por qué una consulta no se resolvió para orientar el backlog. El registro **no** autoriza al modelo a crear endpoints, modificar código ni ejecutar migraciones.

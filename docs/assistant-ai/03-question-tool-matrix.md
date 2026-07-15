@@ -1,5 +1,7 @@
 # Matriz pregunta → herramienta
 
+> Matriz de decisión de la auditoría inicial. El P0 ya está cerrado y el primer subconjunto de seis tools read-only está implementado; véanse los documentos 10–15 para el estado ejecutable actual.
+
 La confianza mide si el sistema actual puede obtener un resultado técnicamente correcto. **Alta** exige contrato directo o composición exacta sobre un mes completo; **media** indica ambigüedad o múltiples contratos; **baja** indica carencia o riesgo contractual.
 
 | Pregunta o intención | Endpoint principal | Secundarios | Parámetros | ¿Hoy? | Confianza | Riesgos | Mejora sugerida |

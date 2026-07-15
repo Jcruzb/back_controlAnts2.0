@@ -202,6 +202,17 @@ LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = os.getenv('TIME_ZONE', 'UTC')
 
+# Experimental read-only assistant. Disabled by default and restricted to the
+# dependency-free mock provider in this phase.
+ASSISTANT_ENABLED = env_bool("ASSISTANT_ENABLED", False)
+ASSISTANT_PROVIDER = os.getenv("ASSISTANT_PROVIDER", "mock").strip().lower()
+ASSISTANT_MAX_MESSAGE_LENGTH = int(os.getenv("ASSISTANT_MAX_MESSAGE_LENGTH", "200"))
+ASSISTANT_BUDGET_NEAR_LIMIT_PERCENT = os.getenv(
+    "ASSISTANT_BUDGET_NEAR_LIMIT_PERCENT",
+    "90.00",
+)
+DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "EUR").strip().upper()
+
 USE_I18N = True
 
 USE_TZ = True

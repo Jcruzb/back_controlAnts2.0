@@ -1,5 +1,7 @@
 # Carencias priorizadas
 
+> Registro histórico de carencias detectadas. G-01 (`ONE_MONTH`) está resuelta; las métricas de caja y las agregaciones de categorías/pagadores tienen ya contrato interno para el asistente. Las demás entradas continúan como backlog salvo indicación expresa en los documentos 10–15.
+
 ## Resumen
 
 | Prioridad | Cantidad | Interpretación |

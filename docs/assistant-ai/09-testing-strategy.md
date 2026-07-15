@@ -1,5 +1,7 @@
 # Estrategia de pruebas
 
+> La parte aplicable al MVP mock está ejecutada con 83 pruebas backend en verde. Tool calling real, conversación natural, carga y proveedor externo continúan pendientes.
+
 ## Objetivo
 
 Verificar hechos financieros, aislamiento y control de acciones independientemente del proveedor de IA. La mayoría de pruebas debe usar un provider mock determinista; unas pocas pruebas contractuales pueden ejecutarse contra proveedor real fuera de CI y sin datos personales.

@@ -18,6 +18,7 @@ from core.views.auth_view import (
     RegisterView,
 )
 from core.views.family_member_view import FamilyMemberListView
+from core.views.assistant_view import AssistantMessageView
 
 from core.views.planned_income_plan_viewset import IncomePlanViewSet
 from core.views.plannedIncome_viewset import IncomePlanVersionViewSet
@@ -78,6 +79,7 @@ urlpatterns = [
     path('auth/change-password/', ChangePasswordView.as_view(), name='auth-change-password'),
     path("budget/", BudgetView.as_view(), name="budget"),
     path("family/members/", FamilyMemberListView.as_view(), name="family-members"),
+    path("assistant/messages/", AssistantMessageView.as_view(), name="assistant-messages"),
 ]
 
 urlpatterns += router.urls

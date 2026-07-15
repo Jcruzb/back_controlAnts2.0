@@ -1,5 +1,7 @@
 # Propuesta de herramientas para IA
 
+> Propuesta original de 12 tools. La fase 2 implementa solo el MVP seguro de seis lecturas (`get_monthly_budget`, `get_monthly_cash_summary`, `list_monthly_expenses`, `get_recurring_payment_status`, `get_category_spending`, `get_payer_spending`); el resto sigue sin implementar.
+
 ## Principios
 
 1. Registro cerrado: el modelo elige nombres semánticos, nunca método/URL.

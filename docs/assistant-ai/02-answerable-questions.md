@@ -1,5 +1,7 @@
 # Catálogo de preguntas respondibles
 
+> Catálogo basado en la API previa a la fase 2. Las limitaciones `ONE_MONTH`, caja y agregaciones se conservan como evidencia histórica; las seis tools implementadas y sus contratos vigentes están en `11-financial-metrics-contract.md` y `13-read-tools-implementation.md`.
+
 ## Reglas comunes
 
 - El periodo se resuelve en la zona horaria efectiva, se convierte a `year` y `month` numéricos y se repite en la respuesta.

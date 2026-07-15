@@ -1,5 +1,7 @@
 # Seguridad, permisos y privacidad
 
+> Los controles del MVP read-only están implementados: sesión/CSRF, tenant derivado, argumentos de identidad prohibidos, allowlist inmutable, flag apagado y trazas pseudonimizadas. Los controles de escritura siguen siendo diseño futuro.
+
 ## Implementación real de autenticación
 
 - DRF usa `SessionAuthentication` y permiso global `IsAuthenticated`.

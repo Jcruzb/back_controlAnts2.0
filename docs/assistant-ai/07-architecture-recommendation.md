@@ -1,5 +1,7 @@
 # Recomendación de arquitectura
 
+> La recomendación se materializa en fase 2 con endpoint Django, registro estático y provider mock. No existe todavía conexión a proveedor real.
+
 ## Decisión
 
 Recomendada: **Opción B, endpoint intermedio propio del asistente**, con herramientas semánticas internas.

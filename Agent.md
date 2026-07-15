@@ -143,8 +143,42 @@ Top-level budget semantics:
   linkage; it must not be added to `total_spent` again.
 - `remaining_amount` / `difference_amount`: signed budget variance,
   `total_planned - total_spent`.
+- `budget_variance`: explicit compatible alias of that variance.
+- `planned_paid_amount`: real movements linked to recurring or planned obligations.
+- `planned_pending_amount`: canonical remaining obligation across recurring and planned rows.
+- `actual_income`: real `Income` movements registered for the family month.
+- `cash_balance`: real monthly cash balance, `actual_income - total_spent`.
 - `status`: `over` only when real spending is strictly greater than the budget;
   exact coverage is `ok`, and spending without any configured budget is `over`.
+
+`remaining_amount` is not cash available. Assistant-facing contracts must call it
+budget variance and use `cash_balance` when answering how much real money remains.
+
+Versioned `ONE_MONTH` planned-expense plans apply only to their configured month.
+Migration-created mirrors of legacy planned expenses are deduplicated so the
+legacy row remains the historical source of truth.
+
+### Experimental assistant contract
+
+`POST /api/assistant/messages/` is disabled by default, session-authenticated,
+CSRF-protected and restricted to the dependency-free mock provider. It derives
+the tenant from `request.user.profile.family`, exposes six statically registered
+read tools and rejects caller-supplied tenant identifiers. Assistant budget/status
+tools use `BudgetService(materialize=False)` so they do not create Month or
+occurrence rows. See `docs/assistant-ai/` for the complete contract.
+
+Known Spanish monthly questions are routed before the provider through a
+deterministic engine. Successful matches return visual schema `1.0`, source
+`deterministic`, a registered intent, an optional configured-timezone period,
+and up to ten validated blocks. The nine allowed block types and twelve intents
+are static registries. Deterministic responses cannot contain recommendation or
+question blocks and initially expose at most two objective alerts. Detail actions
+post only an allowlisted intent plus year/month back to the same endpoint.
+
+The verified frontend navigation allowlist is `/`, `/dashboard`, `/expenses`,
+`/incomes`, `/recurring`, `/categories`, and `/account`. External URLs, danger
+actions, caller-supplied visual blocks, tenant identifiers, and write intents are
+rejected. Unmatched requests retain the dependency-free mock fallback.
 
 `planned` and `recurring` now expose consistent category fields:
 

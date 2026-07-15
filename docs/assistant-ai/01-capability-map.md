@@ -1,5 +1,7 @@
 # Mapa de capacidades
 
+> Fotografía de la auditoría inicial. Los estados P0 y las carencias de caja/agregación aquí descritos fueron tratados en fase 2; para el contrato vigente véanse `10-one-month-fix.md` a `15-assistant-endpoint.md`.
+
 ## Escala de preparación
 
 - **Alta:** contrato backend directo, aislado y con semántica estable.
