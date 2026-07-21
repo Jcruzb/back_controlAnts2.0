@@ -56,7 +56,7 @@ class ProviderUnavailableError(AssistantError):
 
 class UnsupportedRequestError(AssistantError):
     code = "unsupported_request"
-    public_message = "La solicitud no está soportada por el asistente simulado."
+    public_message = "La solicitud no está soportada por el asistente financiero."
     http_status = 400
 
 

@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import logging
+from datetime import date
 from time import monotonic
 import uuid
 
@@ -9,15 +10,26 @@ from django.conf import settings
 from core.assistant.errors import (
     AssistantError,
     ProviderUnavailableError,
-    error_from_payload,
+    UnsupportedToolError,
 )
 from core.assistant.deterministic import DeterministicAssistantService
-from core.assistant.providers import MockAssistantProvider
+from core.assistant.deterministic.normalizer import current_local_date
+from core.assistant.providers import MockAssistantProvider, OpenAIAssistantProvider
 from core.assistant.registry import ToolRegistry
+from core.assistant.tools.base import validate_period
 from core.assistant.unsupported import UnsupportedRequestClassifier
 
 
 logger = logging.getLogger("core.assistant")
+
+TOOL_TO_INTENT = {
+    "get_monthly_budget": "monthly_summary",
+    "get_monthly_cash_summary": "monthly_cash_balance",
+    "list_monthly_expenses": "monthly_spending",
+    "get_recurring_payment_status": "pending_payments",
+    "get_category_spending": "category_spending",
+    "get_payer_spending": "payer_spending",
+}
 
 
 def pseudonymize_identifier(value):
@@ -52,14 +64,20 @@ class AssistantApplicationService:
     def _build_provider(self):
         if settings.ASSISTANT_PROVIDER == "mock":
             return MockAssistantProvider()
+        if settings.ASSISTANT_PROVIDER == "openai":
+            return OpenAIAssistantProvider()
         raise ProviderUnavailableError()
 
-    def process(self, *, actor, family, message):
+    def process(self, *, actor, family, message, context=None):
         request_id = f"req_{uuid.uuid4()}"
         started_at = monotonic()
         tool_name = None
         try:
-            match = self.deterministic_service.can_handle(message=message)
+            reference_date = self._reference_date(context)
+            match = self.deterministic_service.can_handle(
+                message=message,
+                reference_date=reference_date,
+            )
             if match.can_respond:
                 response = self.deterministic_service.respond(
                     intent=match.intent,
@@ -82,25 +100,39 @@ class AssistantApplicationService:
             decision = self.provider.respond(
                 messages=[{"role": "user", "content": message}],
                 available_tools=self.registry.metadata(),
-                context={"request_id": request_id},
+                context={
+                    "request_id": request_id,
+                    "default_period": {
+                        "year": reference_date.year,
+                        "month": reference_date.month,
+                    },
+                },
             )
             tool_name = decision.tool_name
-            tool = self.registry.get(tool_name)
-            result = tool.execute(
+            self.registry.get(tool_name)
+            intent = TOOL_TO_INTENT.get(tool_name)
+            if intent is None:
+                raise UnsupportedToolError()
+            year, month = validate_period({
+                "year": decision.arguments.get("year"),
+                "month": decision.arguments.get("month"),
+            })
+            response = self.deterministic_service.respond(
+                intent=intent,
+                arguments={
+                    "year": year,
+                    "month": month,
+                },
                 actor=actor,
                 family=family,
-                arguments=decision.arguments,
+                request_id=request_id,
             )
-            if not result.ok:
-                raise error_from_payload(result.error)
-
-            response = {
-                "message": self._format_message(tool_name=tool_name, data=result.data),
-                "period": result.data.get("period"),
-                "tool_calls": [{"name": tool_name, "status": "success"}],
-                "data": result.data,
-                "provider": self.provider.name,
-                "request_id": request_id,
+            response["source"] = "hybrid"
+            response["meta"]["provider"] = self.provider.name
+            response["meta"]["model"] = getattr(self.provider, "model", None)
+            response["meta"]["tool_call"] = {
+                "name": tool_name,
+                "status": "success",
             }
             self._log_success(
                 request_id=request_id,
@@ -133,6 +165,12 @@ class AssistantApplicationService:
                 },
             )
             raise
+
+    @staticmethod
+    def _reference_date(context):
+        if context:
+            return date(context["year"], context["month"], 1)
+        return current_local_date()
 
     def process_intent(self, *, actor, family, intent, arguments):
         request_id = f"req_{uuid.uuid4()}"
@@ -196,19 +234,3 @@ class AssistantApplicationService:
                 "duration_ms": round((monotonic() - started_at) * 1000),
             },
         )
-
-    def _format_message(self, *, tool_name, data):
-        period = data.get("period") or {}
-        label = period.get("label", "Periodo solicitado")
-        if tool_name == "get_monthly_budget":
-            planned = data["planned"]
-            return (
-                f"{label}: {planned['total']} {data['currency']} planificados, "
-                f"{planned['paid']} pagados y {planned['pending']} pendientes."
-            )
-        if tool_name == "get_monthly_cash_summary":
-            return (
-                f"{label}: balance de caja {data['cash_balance']} {data['currency']} "
-                f"con {data['income']['actual']} de ingresos reales."
-            )
-        return f"{label}: consulta completada con {data.get('count', 0)} resultados."

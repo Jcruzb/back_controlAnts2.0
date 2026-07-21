@@ -637,7 +637,7 @@ class DeterministicAssistantIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error"]["code"], "ambiguous_period")
 
-    def test_unknown_query_still_falls_back_to_mock(self):
+    def test_unknown_query_uses_mock_routing_and_keeps_visual_contract(self):
         response = self.client.post(
             "/api/assistant/messages/",
             {"message": "budget:2026-07"},
@@ -645,8 +645,10 @@ class DeterministicAssistantIntegrationTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["provider"], "mock")
-        self.assertNotIn("schema_version", response.data)
+        self.assertEqual(response.data["source"], "hybrid")
+        self.assertEqual(response.data["meta"]["provider"], "mock")
+        self.assertEqual(response.data["schema_version"], "1.0")
+        self.assertEqual(response.data["intent"], "monthly_summary")
 
     def test_family_isolation_in_visual_aggregates(self):
         other = User.objects.create_user(username="visual-other", password="secret123")

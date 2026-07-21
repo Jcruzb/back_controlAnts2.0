@@ -161,7 +161,8 @@ legacy row remains the historical source of truth.
 ### Experimental assistant contract
 
 `POST /api/assistant/messages/` is disabled by default, session-authenticated,
-CSRF-protected and restricted to the dependency-free mock provider. It derives
+CSRF-protected and supports the dependency-free mock plus an optional OpenAI
+router configured only in the backend environment. It derives
 the tenant from `request.user.profile.family`, exposes six statically registered
 read tools and rejects caller-supplied tenant identifiers. Assistant budget/status
 tools use `BudgetService(materialize=False)` so they do not create Month or
@@ -178,7 +179,11 @@ post only an allowlisted intent plus year/month back to the same endpoint.
 The verified frontend navigation allowlist is `/`, `/dashboard`, `/expenses`,
 `/incomes`, `/recurring`, `/categories`, and `/account`. External URLs, danger
 actions, caller-supplied visual blocks, tenant identifiers, and write intents are
-rejected. Unmatched requests retain the dependency-free mock fallback.
+rejected. Unmatched requests use the configured provider. The OpenAI provider
+receives only the question and selected/default period, chooses one allowlisted
+read intent through Responses API function calling, and never receives tenant
+ids or raw financial DTOs. ControlAnts then queries the database and renders the
+visual response deterministically. The browser never receives the provider token.
 
 `planned` and `recurring` now expose consistent category fields:
 

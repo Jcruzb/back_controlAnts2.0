@@ -1,4 +1,5 @@
 from datetime import date
+import json
 from types import MappingProxyType
 from unittest.mock import patch
 
@@ -7,7 +8,9 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APIClient
 
 from core.assistant.errors import UnsupportedRequestError, UnsupportedToolError
+from core.assistant.providers.base import ProviderDecision
 from core.assistant.providers.mock import MockAssistantProvider
+from core.assistant.providers.openai import OpenAIAssistantProvider
 from core.assistant.registry import TOOL_REGISTRY, ToolRegistry
 from core.assistant.tools import (
     GetCategorySpendingTool,
@@ -382,6 +385,98 @@ class AssistantRegistryAndProviderTests(SimpleTestCase):
                     context={},
                 )
 
+    def test_openai_provider_uses_responses_api_without_exposing_financial_data(self):
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps({
+                    "output": [{
+                        "type": "function_call",
+                        "name": "select_financial_intent",
+                        "arguments": json.dumps({
+                            "intent": "monthly_cash_balance",
+                            "year": 2026,
+                            "month": 9,
+                        }),
+                    }],
+                }).encode("utf-8")
+
+        def opener(request, timeout):
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        provider = OpenAIAssistantProvider(
+            api_key="test-secret",
+            model="test-model",
+            base_url="https://api.openai.test/v1",
+            timeout=7,
+            opener=opener,
+        )
+        decision = provider.respond(
+            messages=[{"role": "user", "content": "¿Cuánto queda disponible?"}],
+            available_tools=ToolRegistry().metadata(),
+            context={"default_period": {"year": 2026, "month": 9}},
+        )
+
+        payload = json.loads(captured["request"].data.decode("utf-8"))
+        self.assertEqual(
+            captured["request"].full_url,
+            "https://api.openai.test/v1/responses",
+        )
+        self.assertEqual(captured["timeout"], 7)
+        self.assertEqual(payload["model"], "test-model")
+        self.assertEqual(payload["tool_choice"]["name"], "select_financial_intent")
+        self.assertIn("Periodo seleccionado: 2026-09", payload["input"])
+        self.assertNotIn("family", payload["input"])
+        self.assertEqual(
+            decision,
+            ProviderDecision(
+                tool_name="get_monthly_cash_summary",
+                arguments={"year": 2026, "month": 9},
+            ),
+        )
+
+    def test_openai_provider_rejects_out_of_domain_route(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps({
+                    "output": [{
+                        "type": "function_call",
+                        "name": "select_financial_intent",
+                        "arguments": json.dumps({
+                            "intent": "unsupported",
+                            "year": 2026,
+                            "month": 9,
+                        }),
+                    }],
+                }).encode("utf-8")
+
+        provider = OpenAIAssistantProvider(
+            api_key="test-secret",
+            model="test-model",
+            opener=lambda request, timeout: FakeResponse(),
+        )
+        with self.assertRaises(UnsupportedRequestError):
+            provider.respond(
+                messages=[{"role": "user", "content": "Escribe un poema"}],
+                available_tools=ToolRegistry().metadata(),
+                context={"default_period": {"year": 2026, "month": 9}},
+            )
+
     def test_unsupported_classifier_uses_minimal_categories(self):
         record = UnsupportedRequestClassifier().classify(
             error_code="unsupported_tool",
@@ -444,13 +539,17 @@ class AssistantEndpointTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["provider"], "mock")
+        self.assertEqual(response.data["schema_version"], "1.0")
+        self.assertEqual(response.data["source"], "hybrid")
+        self.assertEqual(response.data["meta"]["provider"], "mock")
         self.assertEqual(response.data["period"]["label"], "Septiembre de 2026")
-        self.assertEqual(response.data["tool_calls"], [
-            {"name": "get_monthly_budget", "status": "success"}
-        ])
-        self.assertIn("request_id", response.data)
-        self.assertEqual(response.data["data"]["planned"]["total"], "0.00")
+        self.assertEqual(response.data["intent"], "monthly_summary")
+        self.assertEqual(response.data["meta"]["tool_call"], {
+            "name": "get_monthly_budget",
+            "status": "success",
+        })
+        self.assertIn("request_id", response.data["meta"])
+        self.assertTrue(response.data["blocks"])
 
     def test_endpoint_preserves_family_isolation(self):
         other = User.objects.create_user(username="other-endpoint", password="secret123")
@@ -480,7 +579,39 @@ class AssistantEndpointTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["data"]["outflows"]["total"], "0.00")
+        metrics = next(
+            block for block in response.data["blocks"] if block["type"] == "metric_grid"
+        )
+        spent = next(item for item in metrics["items"] if item["key"] == "total_spent")
+        self.assertEqual(spent["value"], "0.00")
+
+    def test_message_context_uses_the_month_selected_in_frontend(self):
+        response = self.client.post(
+            "/api/assistant/messages/",
+            {
+                "message": "¿Cómo vamos este mes?",
+                "context": {"year": 2026, "month": 9},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["source"], "deterministic")
+        self.assertEqual(response.data["period"]["year"], 2026)
+        self.assertEqual(response.data["period"]["month"], 9)
+
+    def test_message_context_rejects_unknown_or_tenant_fields(self):
+        invalid = self.client.post(
+            "/api/assistant/messages/",
+            {
+                "message": "¿Cómo vamos este mes?",
+                "context": {"year": 2026, "month": 9, "family_id": 999},
+            },
+            format="json",
+        )
+
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(invalid.data["error"]["code"], "invalid_arguments")
 
     def test_endpoint_returns_typed_input_and_provider_errors(self):
         invalid_month = self.client.post(
@@ -530,6 +661,37 @@ class AssistantEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.data["error"]["code"], "provider_unavailable")
+
+    @override_settings(
+        ASSISTANT_PROVIDER="openai",
+        OPENAI_API_KEY="test-secret",
+        OPENAI_MODEL="test-model",
+    )
+    @patch("core.assistant.providers.openai.OpenAIAssistantProvider.respond")
+    def test_endpoint_routes_free_text_through_openai_and_returns_real_visual_data(
+        self,
+        respond,
+    ):
+        respond.return_value = ProviderDecision(
+            tool_name="get_monthly_cash_summary",
+            arguments={"year": 2026, "month": 9},
+        )
+
+        response = self.client.post(
+            "/api/assistant/messages/",
+            {
+                "message": "Dime cuál es la liquidez disponible",
+                "context": {"year": 2026, "month": 9},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["source"], "hybrid")
+        self.assertEqual(response.data["intent"], "monthly_cash_balance")
+        self.assertEqual(response.data["meta"]["provider"], "openai")
+        self.assertEqual(response.data["meta"]["model"], "test-model")
+        respond.assert_called_once()
 
     def test_session_authentication_enforces_csrf(self):
         client = APIClient(enforce_csrf_checks=True)

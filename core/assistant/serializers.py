@@ -6,6 +6,7 @@ class AssistantMessageSerializer(serializers.Serializer):
     message = serializers.CharField(trim_whitespace=True, required=False)
     intent = serializers.CharField(required=False, max_length=64)
     arguments = serializers.DictField(required=False)
+    context = serializers.DictField(required=False)
     conversation_id = serializers.CharField(
         required=False,
         allow_null=True,
@@ -14,7 +15,7 @@ class AssistantMessageSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
-        allowed_fields = {"message", "conversation_id", "intent", "arguments"}
+        allowed_fields = {"message", "conversation_id", "intent", "arguments", "context"}
         unknown = set(self.initial_data).difference(allowed_fields)
         if unknown:
             field = sorted(unknown)[0]
@@ -34,6 +35,11 @@ class AssistantMessageSerializer(serializers.Serializer):
                 {"arguments": "arguments solo puede acompañar a intent."},
                 code="invalid_arguments",
             )
+        if "context" in attrs and not has_message:
+            raise serializers.ValidationError(
+                {"context": "context solo puede acompañar a message."},
+                code="invalid_arguments",
+            )
         if has_intent and "arguments" not in attrs:
             raise serializers.ValidationError(
                 {"arguments": "Este campo es obligatorio con intent."},
@@ -50,4 +56,23 @@ class AssistantMessageSerializer(serializers.Serializer):
                 },
                 code="invalid_arguments",
             )
+        context = attrs.get("context")
+        if context is not None:
+            if set(context) != {"year", "month"}:
+                raise serializers.ValidationError(
+                    {"context": "El contexto solo admite year y month."},
+                    code="invalid_arguments",
+                )
+            year = context.get("year")
+            month = context.get("month")
+            if isinstance(year, bool) or not isinstance(year, int) or not 1 <= year <= 9999:
+                raise serializers.ValidationError(
+                    {"context": {"year": "El año debe estar entre 1 y 9999."}},
+                    code="invalid_arguments",
+                )
+            if isinstance(month, bool) or not isinstance(month, int) or not 1 <= month <= 12:
+                raise serializers.ValidationError(
+                    {"context": {"month": "El mes debe estar entre 1 y 12."}},
+                    code="invalid_arguments",
+                )
         return attrs

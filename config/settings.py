@@ -202,15 +202,21 @@ LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = os.getenv('TIME_ZONE', 'UTC')
 
-# Experimental read-only assistant. Disabled by default and restricted to the
-# dependency-free mock provider in this phase.
+# Read-only assistant. It remains disabled by default. Deterministic intents do
+# not require an external provider; free-form routing can use mock or OpenAI.
 ASSISTANT_ENABLED = env_bool("ASSISTANT_ENABLED", False)
 ASSISTANT_PROVIDER = os.getenv("ASSISTANT_PROVIDER", "mock").strip().lower()
 ASSISTANT_MAX_MESSAGE_LENGTH = int(os.getenv("ASSISTANT_MAX_MESSAGE_LENGTH", "200"))
+ASSISTANT_PROVIDER_TIMEOUT_SECONDS = int(
+    os.getenv("ASSISTANT_PROVIDER_TIMEOUT_SECONDS", "20")
+)
 ASSISTANT_BUDGET_NEAR_LIMIT_PERCENT = os.getenv(
     "ASSISTANT_BUDGET_NEAR_LIMIT_PERCENT",
     "90.00",
 )
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "").strip()
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
 DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "EUR").strip().upper()
 
 USE_I18N = True

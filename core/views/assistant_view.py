@@ -53,6 +53,7 @@ class AssistantMessageView(APIView):
                     actor=request.user,
                     family=profile.family,
                     message=serializer.validated_data["message"],
+                    context=serializer.validated_data.get("context"),
                 )
         except AssistantError as error:
             return Response({"error": error.to_dict()}, status=error.http_status)
