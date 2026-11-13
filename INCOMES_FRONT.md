@@ -226,3 +226,41 @@ La pantalla de ingresos debe tener:
 - Bloque de ingresos planificados pendientes usando `/income-plans/month/`
 - Acciones `Confirmar` y `Ajustar` para planes pendientes
 - Estado visual para `RESOLVED` y `MISSING_VERSION`
+
+## Cobro independiente de la previsión (noviembre de 2026)
+
+Los endpoints anteriores `confirm` y `adjust` mantienen sus contratos. El nuevo
+frontend debe utilizar estas operaciones separadas:
+
+- `POST /api/income-plans/{id}/record-receipt/?year=2026&month=8`
+  con `{"amount":"950.00","date":"2026-08-28","description":"Nómina"}`.
+  `amount` y `date` son obligatorios; la fecha pertenece al mes seleccionado.
+  Registra un único ingreso real sin modificar ninguna versión prevista.
+  Responde 200 con `{"detail":"OK","income_id":123,"created":true}`.
+  Repetir los mismos valores normalizados devuelve el mismo id y `created:false`.
+  Repetir con valores distintos devuelve 409 y el `income_id` existente; no lo
+  sobrescribe. Refrescar ingresos, planes y resumen después de guardar o de un 409.
+  Administradores y miembros de la familia pueden registrar cobros.
+- `POST /api/income-plans/{id}/change-planned-amount/?year=2026&month=9`
+  con `{"amount":"1200.00"}`. Solo administradores. Cambia el importe previsto
+  desde septiembre, conservando las versiones futuras que ya existían. No crea
+  ni modifica ingresos reales, incluso si el mes ya tiene un cobro.
+  Responde 200 con `detail`, `version_id`, `planned_amount` y
+  `effective_month: {year, month}`.
+
+Ambas operaciones requieren sesión y CSRF; rechazan planes de otra familia,
+planes inactivos y meses cerrados. Los importes admiten dos decimales y deben ser
+positivos. El cambio de previsión conserva el bloqueo existente cuando hay meses
+cerrados posteriores. Crear un plan nunca registra un cobro y rechaza períodos
+que incluyan meses cerrados. No hay migraciones nuevas.
+
+Pruebas de contrato, permisos, repetición, concurrencia y compatibilidad:
+
+```sh
+./venv/bin/python manage.py test core.test_income_receipts core.tests.IncomePlanAdjustmentTests --noinput
+./venv/bin/python manage.py test --noinput
+```
+
+Usar una base PostgreSQL local de pruebas y un usuario con permiso para crear la
+base temporal `test_<DB_NAME>`. La prueba de concurrencia usa dos conexiones reales
+PostgreSQL; se omite explícitamente en otros motores.
