@@ -458,5 +458,42 @@ class PlannedExpenseOccurrence(models.Model):
         source = self.planned_expense or self.planned_expense_plan
         return f"{source} - {self.month}"
 
+
+class CreditAccount(models.Model):
+    family = models.ForeignKey(Family, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+
+
+class FinancedPurchase(models.Model):
+    family = models.ForeignKey(Family, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    category = models.ForeignKey(Category, on_delete=models.PROTECT)
+    credit_account = models.ForeignKey(CreditAccount, null=True, blank=True, on_delete=models.PROTECT)
+    purchase_date = models.DateField()
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    installment_count = models.PositiveSmallIntegerField()
+    first_due_date = models.DateField()
+    class Meta:
+        constraints = [models.CheckConstraint(check=models.Q(total_amount__gt=0), name='financing_total_positive'), models.CheckConstraint(check=models.Q(installment_count__gte=1, installment_count__lte=360), name='financing_count_range')]
+
+
+class FinancingInstallment(models.Model):
+    purchase = models.ForeignKey(FinancedPurchase, related_name='installments', on_delete=models.CASCADE)
+    number = models.PositiveSmallIntegerField()
+    due_date = models.DateField()
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    class Meta:
+        ordering = ['number']
+        constraints = [models.UniqueConstraint(fields=['purchase', 'number'], name='unique_financing_installment'), models.CheckConstraint(check=models.Q(amount__gt=0), name='financing_installment_positive')]
+
+
+class FinancingPayment(models.Model):
+    installment = models.ForeignKey(FinancingInstallment, related_name='payments', on_delete=models.PROTECT)
+    expense = models.OneToOneField(Expense, related_name='financing_payment', on_delete=models.PROTECT)
+    idempotency_key = models.UUIDField()
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['installment', 'idempotency_key'], name='unique_financing_payment_key')]
+
+
 # Assistant proposals are stored separately from actual money movements.
 from core.assistant.movement_models import MovementProposal, FamilyCategoryAlias  # noqa: E402,F401

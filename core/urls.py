@@ -24,7 +24,12 @@ from core.views.assistant_movement_view import (AssistantMovementDraftView, Assi
 from core.views.planned_income_plan_viewset import IncomePlanViewSet
 from core.views.plannedIncome_viewset import IncomePlanVersionViewSet
 
+from core.views.financing_viewset import CreditAccountViewSet, FinancedPurchaseViewSet, FinancingInstallmentViewSet
+
 router = DefaultRouter()
+router.register(r"credit-accounts", CreditAccountViewSet, basename="credit-account")
+router.register(r"financed-purchases", FinancedPurchaseViewSet, basename="financed-purchase")
+router.register(r"financing-installments", FinancingInstallmentViewSet, basename="financing-installment")
 router.register(r'expenses', ExpenseViewSet, basename='expense')
 router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'recurring-payments', RecurringPaymentViewSet, basename='recurringpayment')

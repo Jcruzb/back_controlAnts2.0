@@ -145,6 +145,8 @@ class ExpenseViewSet(ModelViewSet):
 
     def perform_update(self, serializer):
         instance = self.get_object()
+        if hasattr(instance, "financing_payment"):
+            raise ValidationError("Financing payments cannot be edited through expenses")
 
         # If the existing month is closed, do not allow any modification
         if instance.month.is_closed:
@@ -218,6 +220,8 @@ class ExpenseViewSet(ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
+        if hasattr(instance, "financing_payment"):
+            raise ValidationError("Financing payments cannot be deleted through expenses")
         # Block deletes for closed months
         if instance.month.is_closed:
             raise ValidationError('This month is closed and cannot be modified')
