@@ -72,7 +72,7 @@ En otra terminal, dentro de `front_ControlAnts2.0`:
 
 ```sh
 npm ci
-npm run dev -- --host 127.0.0.1 --port 5173
+VITE_API_BASE_URL=/api VITE_DEV_PROXY_TARGET=http://127.0.0.1:8001 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
 Abrir `http://127.0.0.1:5173`. El proxy de Vite conecta `/api/` al backend en
