@@ -9,7 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from core.models import CreditAccount, FinancedPurchase, FinancingInstallment, FinancingPayment, Expense, Month, Profile
+from core.models import CreditAccount, FinancedPurchase, FinancingInstallment, FinancingPayment, Expense, Month, Profile, Family
 from core.permissions import IsFamilyAdminOrReadOnly
 
 
@@ -20,12 +20,13 @@ class CreditAccountSerializer(serializers.ModelSerializer):
 
 
 class PurchaseSerializer(serializers.ModelSerializer):
+    idempotency_key = serializers.UUIDField(write_only=True, required=True)
     installments = serializers.SerializerMethodField()
     paid_amount = serializers.SerializerMethodField()
     outstanding_amount = serializers.SerializerMethodField()
     class Meta:
         model = FinancedPurchase
-        fields = ['id', 'name', 'category', 'credit_account', 'purchase_date', 'total_amount', 'installment_count', 'first_due_date', 'installments', 'paid_amount', 'outstanding_amount']
+        fields = ['id', 'idempotency_key', 'name', 'category', 'credit_account', 'purchase_date', 'total_amount', 'installment_count', 'first_due_date', 'installments', 'paid_amount', 'outstanding_amount']
         extra_kwargs = {'total_amount': {'min_value': Decimal('0.01')}, 'installment_count': {'min_value': 1, 'max_value': 360}}
     def get_installments(self, obj):
         result = []
@@ -71,6 +72,25 @@ class CreditAccountViewSet(FamilyCreateListViewSet):
 class FinancedPurchaseViewSet(FamilyCreateListViewSet):
     queryset = FinancedPurchase.objects.prefetch_related('installments__payments__expense').order_by('-id')
     serializer_class = PurchaseSerializer
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        family = request.user.profile.family
+        # Serialize same-family creates before checking the key: there is no
+        # purchase row to lock for the first request. The unique constraint is
+        # an additional database guard, including callers outside this view.
+        Family.objects.select_for_update().get(pk=family.pk)
+        values = serializer.validated_data
+        existing = self.get_queryset().filter(idempotency_key=values['idempotency_key']).first()
+        if existing is not None:
+            fields = ('name', 'category', 'credit_account', 'purchase_date', 'total_amount', 'installment_count', 'first_due_date')
+            if any(getattr(existing, field) != values.get(field) for field in fields):
+                return Response({'detail': 'This purchase key was already used with different values'}, status=409)
+            return Response(self.get_serializer(existing).data, status=200)
+        self.perform_create(serializer)
+        return Response(serializer.data, status=201, headers=self.get_success_headers(serializer.data))
+
     @transaction.atomic
     def perform_create(self, serializer):
         family = self.request.user.profile.family

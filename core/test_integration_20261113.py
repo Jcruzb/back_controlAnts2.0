@@ -42,7 +42,7 @@ class IntegratedMoneyFlowTests(TestCase):
         self.assertEqual(Income.objects.count(), 1)
         self.assertEqual(IncomePlanVersion.objects.get(plan_id=plan['id']).planned_amount, Decimal('1000'))
 
-        purchase = post('/api/financed-purchases/', {'name': 'Compra financiada', 'category': category.pk,
+        purchase = post('/api/financed-purchases/', {'idempotency_key': str(uuid4()), 'name': 'Compra financiada', 'category': category.pk,
                         'purchase_date': '2026-11-01', 'first_due_date': '2026-11-15',
                         'total_amount': '300', 'installment_count': 3}, 201)
         self.assertEqual(balance(), Decimal('1100'))

@@ -465,6 +465,8 @@ class CreditAccount(models.Model):
 
 
 class FinancedPurchase(models.Model):
+    # Null only for purchases created before idempotent creation was introduced.
+    idempotency_key = models.UUIDField(null=True, editable=False)
     family = models.ForeignKey(Family, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
     category = models.ForeignKey(Category, on_delete=models.PROTECT)
@@ -474,7 +476,7 @@ class FinancedPurchase(models.Model):
     installment_count = models.PositiveSmallIntegerField()
     first_due_date = models.DateField()
     class Meta:
-        constraints = [models.CheckConstraint(check=models.Q(total_amount__gt=0), name='financing_total_positive'), models.CheckConstraint(check=models.Q(installment_count__gte=1, installment_count__lte=360), name='financing_count_range')]
+        constraints = [models.UniqueConstraint(fields=['family', 'idempotency_key'], name='unique_financed_purchase_key'), models.CheckConstraint(check=models.Q(total_amount__gt=0), name='financing_total_positive'), models.CheckConstraint(check=models.Q(installment_count__gte=1, installment_count__lte=360), name='financing_count_range')]
 
 
 class FinancingInstallment(models.Model):

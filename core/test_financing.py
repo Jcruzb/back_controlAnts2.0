@@ -16,7 +16,7 @@ class FinancingSetup:
         self.category = Category.objects.create(family=self.family, name='Compras')
         self.client = APIClient()
         self.client.force_authenticate(self.user)
-        self.payload = {'name': 'Ordenador', 'category': self.category.id, 'purchase_date': '2026-01-10', 'first_due_date': '2026-01-31', 'total_amount': '100.00', 'installment_count': 3}
+        self.payload = {'idempotency_key': str(uuid4()), 'name': 'Ordenador', 'category': self.category.id, 'purchase_date': '2026-01-10', 'first_due_date': '2026-01-31', 'total_amount': '100.00', 'installment_count': 3}
     def purchase(self):
         result = self.client.post('/api/financed-purchases/', self.payload, format='json')
         self.assertEqual(result.status_code, 201, result.data)
@@ -26,6 +26,22 @@ class FinancingSetup:
 
 @override_settings(SECURE_SSL_REDIRECT=False)
 class FinancingTests(FinancingSetup, TestCase):
+    def test_creation_requires_key_and_retries_without_new_debt(self):
+        without_key = {key: value for key, value in self.payload.items() if key != 'idempotency_key'}
+        self.assertEqual(self.client.post('/api/financed-purchases/', without_key, format='json').status_code, 400)
+        first = self.purchase()
+        retry = self.client.post('/api/financed-purchases/', self.payload, format='json')
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(retry.data['id'], first['id'])
+        self.assertEqual([r['id'] for r in retry.data['installments']], [r['id'] for r in first['installments']])
+        conflict = self.client.post('/api/financed-purchases/', {**self.payload, 'total_amount': '200.00'}, format='json')
+        self.assertEqual(conflict.status_code, 409)
+        self.assertEqual(FinancedPurchase.objects.count(), 1)
+        self.assertEqual(Expense.objects.count(), 0)
+        # A safe retry is still a read when the purchase month has since closed.
+        Month.objects.filter(family=self.family, year=2026, month=1).update(is_closed=True)
+        self.assertEqual(self.client.post('/api/financed-purchases/', self.payload, format='json').status_code, 200)
+
     def test_schedule_rounding_and_no_cash_on_creation(self):
         purchase = self.purchase()
         self.assertEqual([row['amount'] for row in purchase['installments']], ['33.33', '33.33', '33.34'])
@@ -64,7 +80,7 @@ class FinancingTests(FinancingSetup, TestCase):
         row = self.purchase()['installments'][0]['id']
         Month.objects.filter(family=self.family, year=2026, month=1).update(is_closed=True)
         self.assertEqual(self.pay(row).status_code, 400)
-        self.assertEqual(self.client.post('/api/financed-purchases/', self.payload, format='json').status_code, 400)
+        self.assertEqual(self.client.post('/api/financed-purchases/', {**self.payload, 'idempotency_key': str(uuid4())}, format='json').status_code, 400)
         self.assertEqual(Expense.objects.count(), 0)
     def test_cross_family_category_and_card_rejected(self):
         outsider = User.objects.create_user(username='other')
@@ -74,6 +90,24 @@ class FinancingTests(FinancingSetup, TestCase):
 
 @override_settings(SECURE_SSL_REDIRECT=False)
 class FinancingConcurrencyTests(FinancingSetup, TransactionTestCase):
+    def test_simultaneous_purchase_retry_creates_one_schedule(self):
+        if connection.vendor != 'postgresql': self.skipTest('Requires PostgreSQL row locks')
+        user_id = self.user.id
+        def send(_):
+            close_old_connections()
+            try:
+                client = APIClient(); client.force_authenticate(User.objects.get(pk=user_id))
+                result = client.post('/api/financed-purchases/', self.payload, format='json')
+                return result.status_code, result.data.get('id')
+            finally: connections.close_all()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(send, range(2)))
+        self.assertEqual(sorted(status for status, _ in responses), [200, 201])
+        self.assertEqual(len({pk for _, pk in responses}), 1)
+        self.assertEqual(FinancedPurchase.objects.count(), 1)
+        self.assertEqual(FinancedPurchase.objects.get().installments.count(), 3)
+        self.assertEqual(Expense.objects.count(), 0)
+
     def test_simultaneous_retry_creates_one_expense(self):
         if connection.vendor != 'postgresql': self.skipTest('Requires PostgreSQL row locks')
         row = self.purchase()['installments'][0]['id']; key = str(uuid4()); user_id = self.user.id
