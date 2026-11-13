@@ -7,6 +7,7 @@ from django.db import IntegrityError
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -131,12 +132,22 @@ def _version_reaches_month(version: IncomePlanVersion, month_obj: Month) -> bool
     return version.valid_to is None or _month_key(version.valid_to) >= _month_key(month_obj)
 
 
+class ReceiptInputSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
+    date = serializers.DateField()
+    description = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+
+
+class PlannedAmountInputSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
+
+
 class IncomePlanViewSet(ModelViewSet):
     """CRUD for IncomePlan (salary/recurrent planned income definition)."""
 
     serializer_class = IncomePlanSerializer
     permission_classes = [IsAuthenticated, IsFamilyAdminOrReadOnly]
-    family_member_actions = ("confirm",)
+    family_member_actions = ("confirm", "record_receipt")
 
     def get_queryset(self):
         profile = get_object_or_404(Profile, user=self.request.user)
@@ -172,11 +183,17 @@ class IncomePlanViewSet(ModelViewSet):
         if due_day is not None and (due_day < 1 or due_day > 31):
             raise ValidationError({'due_day': 'due_day must be between 1 and 31'})
 
+    @transaction.atomic
     def perform_create(self, serializer):
         profile = get_object_or_404(Profile, user=self.request.user)
 
         # Ensure required relations are consistent with family
         self._validate_family_consistency(profile, serializer)
+
+        start_month = serializer.validated_data['start_month']
+        end_month = serializer.validated_data.get('end_month')
+        if _has_closed_months_in_range(profile.family, start_month, end_month):
+            raise ValidationError({'detail': 'This month is closed and cannot be modified'})
 
         planned_amount = serializer.validated_data.pop('planned_amount', None)
 
@@ -477,6 +494,65 @@ class IncomePlanViewSet(ModelViewSet):
 
         return income
 
+    @action(detail=True, methods=['post'], url_path='record-receipt')
+    @transaction.atomic
+    def record_receipt(self, request, pk=None):
+        """Record one actual receipt without changing any planned version."""
+        year, month = self._parse_year_month(request)
+        plan = self.get_object()  # Tenant-scoped lookup before locking.
+        plan = IncomePlan.objects.select_for_update().get(pk=plan.pk)
+        self._ensure_plan_applies(plan, year, month)
+        if not plan.active:
+            raise ValidationError({'detail': 'Plan is not active'})
+        payload = ReceiptInputSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        values = payload.validated_data
+        if (values['date'].year, values['date'].month) != (year, month):
+            raise ValidationError({'date': 'date must be within the selected month'})
+        month_obj = _get_or_create_month(plan.family, year, month)
+        month_obj = Month.objects.select_for_update().get(pk=month_obj.pk)
+        if month_obj.is_closed:
+            raise ValidationError({'detail': 'This month is closed and cannot be modified'})
+        if _get_version_for_month(plan, year, month) is None:
+            raise ValidationError({'detail': 'No plan version found for this month'})
+
+        # The database unique constraint also protects against legacy writers.
+        income, created = Income.objects.get_or_create(
+            month=month_obj,
+            income_plan=plan,
+            defaults={**values, 'user': request.user, 'category': plan.category},
+        )
+        if not created and any(getattr(income, key) != value for key, value in values.items()):
+            return Response(
+                {'detail': 'This income plan already has a different receipt for this month',
+                 'income_id': income.pk}, status=409,
+            )
+        return Response({'detail': 'OK', 'income_id': income.pk, 'created': created})
+
+    @action(detail=True, methods=['post'], url_path='change-planned-amount')
+    @transaction.atomic
+    def change_planned_amount(self, request, pk=None):
+        """Change the forward plan explicitly, including after a month was received."""
+        year, month = self._parse_year_month(request)
+        plan = self.get_object()
+        plan = IncomePlan.objects.select_for_update().get(pk=plan.pk)
+        self._ensure_plan_applies(plan, year, month)
+        if not plan.active:
+            raise ValidationError({'detail': 'Plan is not active'})
+        payload = PlannedAmountInputSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        profile = get_object_or_404(Profile, user=request.user)
+        month_obj = _get_or_create_month(profile.family, year, month)
+        month_obj = Month.objects.select_for_update().get(pk=month_obj.pk)
+        version = self._apply_forward_adjustment(
+            profile, plan, month_obj, payload.validated_data['amount'],
+        )
+        return Response({
+            'detail': 'OK', 'version_id': version.pk,
+            'planned_amount': str(version.planned_amount),
+            'effective_month': {'year': year, 'month': month},
+        })
+
     @action(detail=True, methods=['post'], url_path='confirm')
     def confirm(self, request, pk=None):
         year_int, month_int = self._parse_year_month(request)
@@ -510,7 +586,7 @@ class IncomePlanViewSet(ModelViewSet):
         description = request.data.get('description', '')
         profile = get_object_or_404(Profile, user=request.user)
 
-        plan = IncomePlan.objects.select_related('start_month', 'end_month', 'category').get(id=plan.id)
+        plan = IncomePlan.objects.select_for_update().get(id=plan.id)
         if plan.family_id != profile.family_id:
             raise ValidationError({'detail': 'Not allowed'})
         self._ensure_plan_applies(plan, year_int, month_int)
