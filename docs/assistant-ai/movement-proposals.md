@@ -19,7 +19,9 @@ Cada fila contiene `kind` (`expense` o `income`), `amount`, `date`, `category`,
 la interfaz debe pedir su revisión. Un movimiento por línea o punto y coma,
 máximo 20, texto máximo 4000 caracteres. Admite números con coma o punto decimal
 y fechas ISO. Sin fecha explícita propone hoy si coincide con el período elegido,
-o el primer día de ese período. Referencias como «ayer» requieren fecha manual.
+o el primer día de ese período. «Hoy» usa la fecha de la zona horaria configurada y avisa si difiere del período.
+Otras referencias temporales (por ejemplo «ayer», «el mes pasado» o fechas
+escritas con nombres de meses) requieren una fecha manual.
 
 Las categorías se buscan por nombre normalizado y por alias aprendidos dentro de
 la familia. Varias coincidencias no se resuelven por prioridad: se pide selección.

@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import date, timedelta
 from threading import Barrier
 from unittest.mock import patch
 
@@ -58,6 +58,19 @@ class AssistantMovementTests(MovementFixtures, TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertTrue(response.data['rows'][0]['errors'])
         self.assertEqual(self.draft('\n'.join(['gasto 1'] * 21)).status_code, 400)
+
+    def test_explicit_temporal_phrases_never_silently_use_selected_month(self):
+        with patch('core.assistant.movements.timezone.localdate', return_value=date(2026, 11, 13)):
+            today = self.draft('Gaste 12 hoy en alimentación').data['rows'][0]
+            self.assertEqual(today['date'], '2026-11-13')
+            self.assertTrue(today['errors'])
+            for text in ('Gaste 12 el 15 de agosto en alimentación',
+                         'Gaste 12 el mes pasado en alimentación',
+                         'Gaste 12 el 15 en alimentación',
+                         'Gaste 12 el 15/08/2026 en alimentación'):
+                row = self.draft(text).data['rows'][0]
+                self.assertIsNone(row['date'], text)
+                self.assertTrue(row['errors'])
 
     def test_prepare_does_not_write_financial_rows_and_confirmation_is_idempotent(self):
         prepared = self.prepare()

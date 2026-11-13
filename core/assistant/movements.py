@@ -95,9 +95,22 @@ def draft_movements(text, year, month, family):
             except ValueError:
                 errors.append('Revisa la fecha.')
                 parsed_date = None
-        if not dates and re.search(r'\b(ayer|anteayer|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b', normalized):
+        unsupported_time = re.search(
+            r'\b(ayer|anteayer|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo|'
+            r'enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|'
+            r'semana|mes|ano|pasado|pasada|anterior|proximo|proxima|dia)\b|\bel\s+\d{1,2}\b', normalized,
+        ) or re.search(r'\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b', re.sub(r'\b\d{4}-\d{2}-\d{2}\b', '', line))
+        if unsupported_time:
             parsed_date = None
             errors.append('Introduce la fecha exacta del movimiento.')
+        elif re.search(r'\bhoy\b', normalized):
+            if dates and dates[0] != today.isoformat():
+                parsed_date = None
+                errors.append('La fecha indicada no coincide con hoy. Revisa la fecha.')
+            else:
+                parsed_date = today.isoformat()
+                if (today.year, today.month) != (year, month):
+                    errors.append('Hoy pertenece a otro período. Revisa la fecha antes de guardar.')
         without_dates = re.sub(r'\b\d{4}-\d{2}-\d{2}\b', '', line)
         amounts = re.findall(r'(?<![\w.,])[-+]?\d+(?:[.,]\d{1,2})?(?![\w.,])', without_dates)
         amount = None
