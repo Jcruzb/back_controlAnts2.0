@@ -364,3 +364,13 @@ Relevant file:
 1. Expand tests around closed months across every mutation endpoint.
 2. Consider a dedicated production settings module as deployment complexity grows.
 3. Add observability for throttled authentication attempts and permission denials.
+
+### Explicit assistant movement proposals
+
+Additive authenticated endpoints `assistant/movement-drafts/`,
+`assistant/movement-proposals/` and `assistant/movement-proposals/{uuid}/confirm/`
+provide deterministic batch drafting and explicit confirmation. The existing
+messages endpoint remains read-only. Proposals are immutable, actor/family-bound,
+expire after 15 minutes and create all movements atomically with idempotent
+confirmation. Family category aliases are learned only with an explicit per-row
+opt-in after successful confirmation. See `docs/assistant-ai/movement-proposals.md`.
