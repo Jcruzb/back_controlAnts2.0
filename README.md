@@ -8,6 +8,13 @@ Las reglas funcionales, contratos sensibles y riesgos conocidos se documentan
 en [Agent.md](Agent.md). Las reglas de trabajo para agentes y tooling están en
 [AGENTS.md](AGENTS.md).
 
+## Integración de mejoras (13 de noviembre de 2026)
+
+Para descargar y probar las ramas de ingresos, financiaciones y Nilo juntas,
+seguir [la guía de integración local](docs/LOCAL_INTEGRATION_20261113.md). Incluye
+Python 3.9, una base PostgreSQL aislada, configuración del asistente y los comandos
+de pruebas.
+
 ## Preparación local
 
 ```bash
