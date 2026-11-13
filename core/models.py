@@ -457,3 +457,6 @@ class PlannedExpenseOccurrence(models.Model):
     def __str__(self):
         source = self.planned_expense or self.planned_expense_plan
         return f"{source} - {self.month}"
+
+# Assistant proposals are stored separately from actual money movements.
+from core.assistant.movement_models import MovementProposal, FamilyCategoryAlias  # noqa: E402,F401
