@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 
 class AssistantMessageSerializer(serializers.Serializer):
+    allow_ai = serializers.BooleanField(required=False, default=False)
     message = serializers.CharField(trim_whitespace=True, required=False)
     intent = serializers.CharField(required=False, max_length=64)
     arguments = serializers.DictField(required=False)
@@ -15,7 +16,7 @@ class AssistantMessageSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
-        allowed_fields = {"message", "conversation_id", "intent", "arguments", "context"}
+        allowed_fields = {"message", "conversation_id", "intent", "arguments", "context", "allow_ai"}
         unknown = set(self.initial_data).difference(allowed_fields)
         if unknown:
             field = sorted(unknown)[0]
@@ -23,6 +24,9 @@ class AssistantMessageSerializer(serializers.Serializer):
                 {field: "Este campo no está permitido."},
                 code="invalid_arguments",
             )
+        if "allow_ai" in self.initial_data:
+            if type(self.initial_data["allow_ai"]) is not bool or "message" not in self.initial_data:
+                raise serializers.ValidationError({"allow_ai": "Envía un booleano explícito solo con message."})
         has_message = "message" in attrs
         has_intent = "intent" in attrs
         if has_message == has_intent:

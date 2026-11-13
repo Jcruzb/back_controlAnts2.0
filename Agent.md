@@ -179,7 +179,9 @@ post only an allowlisted intent plus year/month back to the same endpoint.
 The verified frontend navigation allowlist is `/`, `/dashboard`, `/expenses`,
 `/incomes`, `/recurring`, `/categories`, and `/account`. External URLs, danger
 actions, caller-supplied visual blocks, tenant identifiers, and write intents are
-rejected. Unmatched requests use the configured provider. The OpenAI provider
+rejected. Unmatched requests return HTTP 409 `ai_consent_required` without constructing a provider.
+Only a retry with the JSON boolean `allow_ai: true` permits the configured provider.
+This is per-message consent, never persisted; deterministic reads remain unchanged. The OpenAI provider
 receives only the question and selected/default period, chooses one allowlisted
 read intent through Responses API function calling, and never receives tenant
 ids or raw financial DTOs. ControlAnts then queries the database and renders the

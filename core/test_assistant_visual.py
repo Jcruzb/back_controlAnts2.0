@@ -640,7 +640,7 @@ class DeterministicAssistantIntegrationTests(TestCase):
     def test_unknown_query_uses_mock_routing_and_keeps_visual_contract(self):
         response = self.client.post(
             "/api/assistant/messages/",
-            {"message": "budget:2026-07"},
+            {"message": "budget:2026-07", "allow_ai": True},
             format="json",
         )
 
