@@ -509,12 +509,40 @@ class AssistantEndpointTests(TestCase):
         self.month = Month.objects.create(family=self.family, year=2026, month=9)
         self.client.force_authenticate(user=self.user)
 
+    @patch("core.assistant.services.AssistantApplicationService._build_provider")
+    def test_unknown_message_never_constructs_provider_without_explicit_opt_in(self, provider):
+        for payload in ({"message": "budget:2026-09"}, {"message": "budget:2026-09", "allow_ai": False}):
+            response = self.client.post("/api/assistant/messages/", payload, format="json")
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.data["error"]["code"], "ai_consent_required")
+        provider.assert_not_called()
+
+    @patch("core.assistant.services.AssistantApplicationService._build_provider")
+    def test_known_message_does_not_use_provider_even_with_opt_in(self, provider):
+        response = self.client.post("/api/assistant/messages/", {
+            "message": "¿Cómo vamos este mes?",
+            "context": {"year": 2026, "month": 9},
+            "allow_ai": True,
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["source"], "deterministic")
+        provider.assert_not_called()
+
+    @patch("core.assistant.services.AssistantApplicationService._build_provider")
+    def test_opt_in_must_be_a_json_boolean_and_only_for_messages(self, provider):
+        for value in ("true", "false", 1, 0, None):
+            response = self.client.post("/api/assistant/messages/", {"message": "budget:2026-09", "allow_ai": value}, format="json")
+            self.assertEqual(response.status_code, 400)
+        response = self.client.post("/api/assistant/messages/", {"intent": "monthly_summary", "arguments": {"year": 2026, "month": 9}, "allow_ai": True}, format="json")
+        self.assertEqual(response.status_code, 400)
+        provider.assert_not_called()
+
     def test_endpoint_requires_authentication(self):
         client = APIClient()
 
         response = client.post(
             "/api/assistant/messages/",
-            {"message": "budget:2026-09"},
+            {"message": "budget:2026-09", "allow_ai": True},
             format="json",
         )
 
@@ -524,7 +552,7 @@ class AssistantEndpointTests(TestCase):
     def test_endpoint_is_disabled_by_default_flag(self):
         response = self.client.post(
             "/api/assistant/messages/",
-            {"message": "budget:2026-09"},
+            {"message": "budget:2026-09", "allow_ai": True},
             format="json",
         )
 
@@ -534,7 +562,7 @@ class AssistantEndpointTests(TestCase):
     def test_endpoint_executes_mock_tool_with_stable_contract(self):
         response = self.client.post(
             "/api/assistant/messages/",
-            {"message": "budget:2026-09", "conversation_id": None},
+            {"message": "budget:2026-09", "allow_ai": True, "conversation_id": None},
             format="json",
         )
 
@@ -574,7 +602,7 @@ class AssistantEndpointTests(TestCase):
 
         response = self.client.post(
             "/api/assistant/messages/",
-            {"message": "cash:2026-09"},
+            {"message": "cash:2026-09", "allow_ai": True},
             format="json",
         )
 
@@ -616,12 +644,12 @@ class AssistantEndpointTests(TestCase):
     def test_endpoint_returns_typed_input_and_provider_errors(self):
         invalid_month = self.client.post(
             "/api/assistant/messages/",
-            {"message": "budget:2026-13"},
+            {"message": "budget:2026-13", "allow_ai": True},
             format="json",
         )
         unsupported = self.client.post(
             "/api/assistant/messages/",
-            {"message": "hola"},
+            {"message": "hola", "allow_ai": True},
             format="json",
         )
 
@@ -638,12 +666,12 @@ class AssistantEndpointTests(TestCase):
         )
         tenant_field = self.client.post(
             "/api/assistant/messages/",
-            {"message": "budget:2026-09", "user_id": 999},
+            {"message": "budget:2026-09", "allow_ai": True, "user_id": 999},
             format="json",
         )
         write_attempt = self.client.post(
             "/api/assistant/messages/",
-            {"message": "delete_expense:2026-09"},
+            {"message": "delete_expense:2026-09", "allow_ai": True},
             format="json",
         )
 
@@ -655,7 +683,7 @@ class AssistantEndpointTests(TestCase):
     def test_endpoint_rejects_unconfigured_real_provider(self):
         response = self.client.post(
             "/api/assistant/messages/",
-            {"message": "budget:2026-09"},
+            {"message": "budget:2026-09", "allow_ai": True},
             format="json",
         )
 
@@ -681,6 +709,7 @@ class AssistantEndpointTests(TestCase):
             "/api/assistant/messages/",
             {
                 "message": "Dime cuál es la liquidez disponible",
+                "allow_ai": True,
                 "context": {"year": 2026, "month": 9},
             },
             format="json",
@@ -701,12 +730,12 @@ class AssistantEndpointTests(TestCase):
 
         rejected = client.post(
             "/api/assistant/messages/",
-            {"message": "budget:2026-09"},
+            {"message": "budget:2026-09", "allow_ai": True},
             format="json",
         )
         accepted = client.post(
             "/api/assistant/messages/",
-            {"message": "budget:2026-09"},
+            {"message": "budget:2026-09", "allow_ai": True},
             format="json",
             HTTP_X_CSRFTOKEN=token,
         )
@@ -721,7 +750,7 @@ class AssistantEndpointTests(TestCase):
 
         response = self.client.post(
             "/api/assistant/messages/",
-            {"message": "budget:2026-09"},
+            {"message": "budget:2026-09", "allow_ai": True},
             format="json",
         )
 
