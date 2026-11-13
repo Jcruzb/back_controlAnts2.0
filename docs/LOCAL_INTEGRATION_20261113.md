@@ -122,3 +122,19 @@ verificar esos bloqueos.
    `OPENAI_API_KEY` y `OPENAI_MODEL`, reiniciar y solicitar el escalado en la UI.
 7. Dictado depende del soporte/permisos del navegador. Revisar siempre el texto y
    los importes antes de confirmar. Las fechas ambiguas requieren corrección.
+
+## Despliegue de producción confirmado
+
+JuanOS completó ambos despliegues: backend `4122aa1` con migraciones hasta `0021` y frontend `677c5cd`. Se desplegaron las ramas de integración; no hubo merge a main. La reparación previa de JuanOS permitió revisar configuración, autorizar las acciones concretas del host, comprobar los planes y publicar el frontend mediante releases.
+
+Respaldo previo más reciente: `/var/backups/controlants/juanos/b6a34377-79a7-4ee8-b722-5d2f1c02016e.dump`, 120313 bytes, índice verificado. La verificación del índice no equivale a haber restaurado ese dump real.
+
+El ensayo API dentro del proceso Django de producción terminó con **86 comprobaciones correctas**, dos familias sintéticas, `rollback_verified=true`, cero llamadas a IA externa y salida 0. Incluyó previsión y cobro excepcional, reintentos idempotentes, cambio de previsión futura, tarjeta/compra/cuota, separación de deuda y efectivo, borrador Nilo, confirmación explícita múltiple, alias, aislamiento entre familias y rechazo de escrituras en mes cerrado. Todos los registros sintéticos se revirtieron en una transacción; no se usaron datos de familias reales. Las secuencias PostgreSQL pueden consumir identificadores incluso al revertir.
+
+El primer intento detectó una secuencia histórica de usuarios atrasada respecto a los datos importados. Se avanzó `auth_user` de 2 a 3 bajo bloqueo de tabla, sin editar registros existentes; el ensayo posterior aprobó todas las comprobaciones. No se restauró una BD ni se redujeron secuencias.
+
+Para recuperación, conservar las versiones y artefactos previos, así como el esquema aditivo y cualquier dato generado desde el despliegue. No revertir migraciones ni restaurar automáticamente el dump: podría perder cobros, pagos, propuestas o alias posteriores. Una restauración de datos requiere una decisión y un procedimiento separado.
+
+Límites: el ensayo autenticó usuarios sintéticos mediante `force_authenticate`; valida contratos y reglas de API, no sustituye el login/CSRF real en navegador. La comprobación final en navegador de producción también pasó: modal de ingresos separa previsión y cobro sin guardar; financiación carga y usa categorías configuradas; Nilo responde una consulta determinista y analiza un borrador sintético de gasto 10 e ingreso 50 sin preparar ni confirmar operaciones; Dashboard y Gastos conservan los movimientos y totales existentes. No se observaron errores de navegador. No se publican importes reales de la familia en este registro. Micrófono real y reconocimiento de voz no probados; siguen vigentes los demás límites de QA anteriores. No se afirma una prueba real de proveedor IA externo.
+
+Release estática servida: `/var/www/controlants/frontend-releases/677c5cd4e944c8fdeba27c058367a1adb1079054`. La captura de verificación se conserva localmente fuera de Git; no se suben capturas con datos financieros reales.
