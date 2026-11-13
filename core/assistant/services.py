@@ -9,6 +9,7 @@ from django.conf import settings
 
 from core.assistant.errors import (
     AssistantError,
+    AIConsentRequiredError,
     ProviderUnavailableError,
     UnsupportedToolError,
 )
@@ -68,7 +69,7 @@ class AssistantApplicationService:
             return OpenAIAssistantProvider()
         raise ProviderUnavailableError()
 
-    def process(self, *, actor, family, message, context=None):
+    def process(self, *, actor, family, message, context=None, allow_ai=False):
         request_id = f"req_{uuid.uuid4()}"
         started_at = monotonic()
         tool_name = None
@@ -96,6 +97,9 @@ class AssistantApplicationService:
                     source="deterministic",
                 )
                 return response
+
+            if allow_ai is not True:
+                raise AIConsentRequiredError()
 
             decision = self.provider.respond(
                 messages=[{"role": "user", "content": message}],

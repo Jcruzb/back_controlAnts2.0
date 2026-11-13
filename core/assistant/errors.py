@@ -48,6 +48,12 @@ class AssistantDisabledError(AssistantError):
     http_status = 503
 
 
+class AIConsentRequiredError(AssistantError):
+    code = "ai_consent_required"
+    public_message = "No he reconocido la consulta. Puedes reformularla o consultar con IA."
+    http_status = 409
+
+
 class ProviderUnavailableError(AssistantError):
     code = "provider_unavailable"
     public_message = "El proveedor del asistente no está disponible."
@@ -141,6 +147,7 @@ ERROR_TYPES = {
         ResourceNotFoundError,
         AssistantDisabledError,
         ProviderUnavailableError,
+        AIConsentRequiredError,
         UnsupportedRequestError,
         InvalidVisualBlockError,
         UnsupportedBlockTypeError,

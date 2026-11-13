@@ -179,7 +179,9 @@ post only an allowlisted intent plus year/month back to the same endpoint.
 The verified frontend navigation allowlist is `/`, `/dashboard`, `/expenses`,
 `/incomes`, `/recurring`, `/categories`, and `/account`. External URLs, danger
 actions, caller-supplied visual blocks, tenant identifiers, and write intents are
-rejected. Unmatched requests use the configured provider. The OpenAI provider
+rejected. Unmatched requests return HTTP 409 `ai_consent_required` without constructing a provider.
+Only a retry with the JSON boolean `allow_ai: true` permits the configured provider.
+This is per-message consent, never persisted; deterministic reads remain unchanged. The OpenAI provider
 receives only the question and selected/default period, chooses one allowlisted
 read intent through Responses API function calling, and never receives tenant
 ids or raw financial DTOs. ControlAnts then queries the database and renders the
@@ -362,3 +364,13 @@ Relevant file:
 1. Expand tests around closed months across every mutation endpoint.
 2. Consider a dedicated production settings module as deployment complexity grows.
 3. Add observability for throttled authentication attempts and permission denials.
+
+### Explicit assistant movement proposals
+
+Additive authenticated endpoints `assistant/movement-drafts/`,
+`assistant/movement-proposals/` and `assistant/movement-proposals/{uuid}/confirm/`
+provide deterministic batch drafting and explicit confirmation. The existing
+messages endpoint remains read-only. Proposals are immutable, actor/family-bound,
+expire after 15 minutes and create all movements atomically with idempotent
+confirmation. Family category aliases are learned only with an explicit per-row
+opt-in after successful confirmation. See `docs/assistant-ai/movement-proposals.md`.

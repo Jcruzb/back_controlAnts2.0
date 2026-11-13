@@ -19,11 +19,17 @@ from core.views.auth_view import (
 )
 from core.views.family_member_view import FamilyMemberListView
 from core.views.assistant_view import AssistantMessageView
+from core.views.assistant_movement_view import (AssistantMovementDraftView, AssistantMovementProposalView, AssistantMovementConfirmView)
 
 from core.views.planned_income_plan_viewset import IncomePlanViewSet
 from core.views.plannedIncome_viewset import IncomePlanVersionViewSet
 
+from core.views.financing_viewset import CreditAccountViewSet, FinancedPurchaseViewSet, FinancingInstallmentViewSet
+
 router = DefaultRouter()
+router.register(r"credit-accounts", CreditAccountViewSet, basename="credit-account")
+router.register(r"financed-purchases", FinancedPurchaseViewSet, basename="financed-purchase")
+router.register(r"financing-installments", FinancingInstallmentViewSet, basename="financing-installment")
 router.register(r'expenses', ExpenseViewSet, basename='expense')
 router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'recurring-payments', RecurringPaymentViewSet, basename='recurringpayment')
@@ -48,6 +54,9 @@ router.register(
 )
 
 urlpatterns = [
+    path("assistant/movement-drafts/", AssistantMovementDraftView.as_view(), name="assistant-movement-drafts"),
+    path("assistant/movement-proposals/", AssistantMovementProposalView.as_view(), name="assistant-movement-proposals"),
+    path("assistant/movement-proposals/<uuid:proposal_id>/confirm/", AssistantMovementConfirmView.as_view(), name="assistant-movement-confirm"),
     path(
         'recurring/generate/',
         GenerateRecurringExpensesAPIView.as_view(),

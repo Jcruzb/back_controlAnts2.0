@@ -31,6 +31,7 @@ class UnsupportedRequestRecord:
 
 class UnsupportedRequestClassifier:
     ERROR_CATEGORY_MAP = {
+        "ai_consent_required": "unsupported_intent",
         "unsupported_request": "unsupported_intent",
         "unsupported_tool": "missing_endpoint",
         "resource_not_found": "insufficient_data",
