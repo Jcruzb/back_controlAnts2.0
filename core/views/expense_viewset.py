@@ -1,9 +1,12 @@
+from django.db import transaction
+from rest_framework.decorators import action
+from core.permissions import IsFamilyAdminOrReadOnly
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 
-from core.models import Expense, Profile, Month
+from core.models import Expense, Profile, Month, FinancingPayment
 from core.serializers.expense_serializer import ExpenseSerializer
 from core.services.recurring_payment_service import (
     get_or_create_recurring_payment_occurrence,
@@ -67,7 +70,7 @@ class ExpenseViewSet(ModelViewSet):
         queryset = Expense.objects.filter(
             month__family=profile.family
         ).select_related(
-            'category',
+            'financing_payment__installment__purchase',
             'month',
             'user',
             'payer',
@@ -101,7 +104,26 @@ class ExpenseViewSet(ModelViewSet):
 
             queryset = queryset.filter(payer_id=payer_int)
 
+        if getattr(self, "_lock_expense", False):
+            queryset = queryset.select_for_update(of=("self",))
         return queryset
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        # Serialize edits with conversion before the serializer reads its instance.
+        self._lock_expense = True
+        return super().update(request, *args, **kwargs)
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        self._lock_expense = True
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], url_path='convert-to-financing',
+            permission_classes=[IsAuthenticated, IsFamilyAdminOrReadOnly])
+    def convert_to_financing(self, request, pk=None):
+        from core.services.expense_financing_conversion import convert_expense
+        return convert_expense(self, request, pk)
 
     def perform_create(self, serializer):
         profile = get_object_or_404(Profile, user=self.request.user)
@@ -145,7 +167,7 @@ class ExpenseViewSet(ModelViewSet):
 
     def perform_update(self, serializer):
         instance = self.get_object()
-        if hasattr(instance, "financing_payment"):
+        if FinancingPayment.objects.filter(expense_id=instance.pk).exists():
             raise ValidationError("Financing payments cannot be edited through expenses")
 
         # If the existing month is closed, do not allow any modification
@@ -220,7 +242,7 @@ class ExpenseViewSet(ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        if hasattr(instance, "financing_payment"):
+        if FinancingPayment.objects.filter(expense_id=instance.pk).exists():
             raise ValidationError("Financing payments cannot be deleted through expenses")
         # Block deletes for closed months
         if instance.month.is_closed:
