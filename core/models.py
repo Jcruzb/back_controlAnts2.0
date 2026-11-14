@@ -474,9 +474,11 @@ class FinancedPurchase(models.Model):
     purchase_date = models.DateField()
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     installment_count = models.PositiveSmallIntegerField()
-    first_due_date = models.DateField()
+    first_due_date = models.DateField(null=True, blank=True)
+    source_expense = models.OneToOneField(Expense, null=True, blank=True, on_delete=models.PROTECT, related_name="converted_purchase")
+    conversion_request = models.JSONField(null=True, editable=False)
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['family', 'idempotency_key'], name='unique_financed_purchase_key'), models.CheckConstraint(check=models.Q(total_amount__gt=0), name='financing_total_positive'), models.CheckConstraint(check=models.Q(installment_count__gte=1, installment_count__lte=360), name='financing_count_range')]
+        constraints = [models.UniqueConstraint(fields=['family', 'idempotency_key'], name='unique_financed_purchase_key'), models.CheckConstraint(check=models.Q(total_amount__gt=0), name='financing_total_positive'), models.CheckConstraint(check=models.Q(installment_count__gte=0, installment_count__lte=360), name='financing_count_range')]
 
 
 class FinancingInstallment(models.Model):

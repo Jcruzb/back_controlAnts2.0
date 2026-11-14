@@ -21,21 +21,33 @@ class CreditAccountSerializer(serializers.ModelSerializer):
 
 class PurchaseSerializer(serializers.ModelSerializer):
     idempotency_key = serializers.UUIDField(write_only=True, required=True)
+    first_due_date = serializers.DateField()
+    initial_payment = serializers.SerializerMethodField()
     installments = serializers.SerializerMethodField()
     paid_amount = serializers.SerializerMethodField()
     outstanding_amount = serializers.SerializerMethodField()
     class Meta:
         model = FinancedPurchase
-        fields = ['id', 'idempotency_key', 'name', 'category', 'credit_account', 'purchase_date', 'total_amount', 'installment_count', 'first_due_date', 'installments', 'paid_amount', 'outstanding_amount']
+        fields = ['id', 'idempotency_key', 'name', 'category', 'credit_account', 'purchase_date', 'total_amount', 'installment_count', 'first_due_date', 'installments', 'paid_amount', 'outstanding_amount', 'source_expense', 'initial_payment']
+        read_only_fields = ['source_expense']
         extra_kwargs = {'total_amount': {'min_value': Decimal('0.01')}, 'installment_count': {'min_value': 1, 'max_value': 360}}
     def get_installments(self, obj):
         result = []
         for row in obj.installments.all():
+            if row.number == 0:
+                continue
             paid = sum((p.expense.amount for p in row.payments.all()), Decimal('0'))
             result.append({'id': row.id, 'number': row.number, 'due_date': row.due_date, 'amount': str(row.amount), 'paid_amount': str(paid), 'pending_amount': str(row.amount - paid)})
         return result
+    def get_initial_payment(self, obj):
+        if not obj.source_expense_id:
+            return None
+        expense = obj.source_expense
+        return {'expense_id': expense.pk, 'amount': str(expense.amount),
+                'date': expense.date.isoformat(), 'payer': expense.payer_id}
     def get_paid_amount(self, obj):
-        return str(sum((Decimal(row['paid_amount']) for row in self.get_installments(obj)), Decimal('0')))
+        return str(sum((payment.expense.amount for row in obj.installments.all()
+                       for payment in row.payments.all()), Decimal('0')))
     def get_outstanding_amount(self, obj):
         return str(obj.total_amount - Decimal(self.get_paid_amount(obj)))
     def validate(self, attrs):
@@ -70,7 +82,7 @@ class CreditAccountViewSet(FamilyCreateListViewSet):
 
 
 class FinancedPurchaseViewSet(FamilyCreateListViewSet):
-    queryset = FinancedPurchase.objects.prefetch_related('installments__payments__expense').order_by('-id')
+    queryset = FinancedPurchase.objects.select_related('source_expense').prefetch_related('installments__payments__expense').order_by('-id')
     serializer_class = PurchaseSerializer
     @transaction.atomic
     def create(self, request, *args, **kwargs):

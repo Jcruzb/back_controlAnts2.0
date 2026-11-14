@@ -16,6 +16,7 @@ from core.services.planned_payment_service import get_planned_payment_month_stat
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
+    financing = serializers.SerializerMethodField()
     recurring_payment_month = serializers.SerializerMethodField()
     planned_payment_month = serializers.SerializerMethodField()
     category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.none())
@@ -59,6 +60,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
         model = Expense
         fields = [
             "id",
+            "financing",
             "description",
             "amount",
             "category",
@@ -109,6 +111,14 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
         attrs["is_recurring"] = recurring_payment is not None
         return attrs
+
+    def get_financing(self, obj):
+        payment = getattr(obj, "financing_payment", None)
+        if payment is None:
+            return None
+        purchase = payment.installment.purchase
+        return {"purchase_id": purchase.pk, "credit_account": purchase.credit_account_id,
+                "is_initial_payment": payment.installment.number == 0}
 
     def get_recurring_payment_month(self, obj):
         if obj.recurring_payment_id is None:
